@@ -1,0 +1,7 @@
+# config.yaml
+
+# Define the base VCF input file name
+input_vcf_name: "HERC5_locus_YRI_100_CHB_250.OutOfAfrica_3G09.vcf"
+
+# Define the path where all output files should be placed
+output_dir: "./preprocessed_vcfs"

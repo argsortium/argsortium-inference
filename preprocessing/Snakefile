@@ -1,0 +1,61 @@
+# Snakefile
+
+# Load the configuration file
+configfile: "config.yaml"
+
+import os
+
+
+# 1. Base name without vcf extension, derived from the input file
+INPUT_BASE = os.path.splitext(config["input_vcf_name"])[0] 
+
+# 2. Define the intermediate VCF file with the required suffix
+INTERMEDIATE_VCF_SUFFIX = ".no_multiallelics.vcf"
+INTERMEDIATE_VCF_NAME = INPUT_BASE + INTERMEDIATE_VCF_SUFFIX
+INTERMEDIATE_VCF_PATH = os.path.join(config["output_dir"], INTERMEDIATE_VCF_NAME)
+
+# 3. Define the base name for PLINK output (used by --out)
+# PLINK's output base will be the same as the intermediate VCF, but without the .vcf extension
+PLINK_OUT_BASE = os.path.join(config["output_dir"], INPUT_BASE + ".no_multiallelics")
+
+# 4. Define the final output file (the frequency file)
+FINAL_FREQ = PLINK_OUT_BASE + ".freq"
+
+
+rule all:
+    input:
+        FINAL_FREQ
+
+# --- Rule 1: Normalize VCF using bcftools ---
+rule normalize_vcf:
+    input:
+        vcf = config["input_vcf_name"]
+    
+    output:
+        normalized_vcf = INTERMEDIATE_VCF_PATH
+    
+    # Run block to create the output directory before executing the command
+    run:
+        os.makedirs(config["output_dir"], exist_ok=True)
+        shell("bcftools norm -m -H {input.vcf} > {output.normalized_vcf}")
+
+# --- Rule 2: Calculate Frequency using plink2 ---
+rule calculate_frequency:
+    input:
+        normalized_vcf = rules.normalize_vcf.output.normalized_vcf
+        
+    output:
+        freq_file = FINAL_FREQ
+        
+    params:
+        # Pass the constructed base path to plink2's --out argument
+        out_base = PLINK_OUT_BASE
+        
+    shell:
+        """
+        plink2 --vcf {input.normalized_vcf} \
+               --snps-only \
+               --set-all-var-ids @:#:$r:$a \
+               --freq \
+               --out {params.out_base}
+        """
