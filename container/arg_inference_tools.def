@@ -1,5 +1,5 @@
 Bootstrap: docker
-From: continuumio/miniconda3:24.3.0-0
+From: continuumio/miniconda3:23.5.2-0
 
 %labels
     Author YourName
@@ -64,11 +64,10 @@ From: continuumio/miniconda3:24.3.0-0
   ############################################################
   mkdir -p /opt/argweaver
   cd /opt/argweaver
-  wget https://github.com/mdrasmus/argweaver/tarball/master
+  wget https://github.com/mdrasmus/argweaver/zipball/master
   unzip master
   cd mdrasmus-argweaver-fee3d32
   make
-  make install --prefix=/opt/argweaver/mdrasmus-argweaver-fee3d32
   ln -s /opt/argweaver/mdrasmus-argweaver-fee3d32/bin/arg-sample /usr/local/bin/arg-sample
   ln -s /opt/argweaver/mdrasmus-argweaver-fee3d32/bin/arg-summarize /usr/local/bin/arg-summarize
   ln -s /opt/argweaver/mdrasmus-argweaver-fee3d32/bin/smc2bed /usr/local/bin/smc2bed
