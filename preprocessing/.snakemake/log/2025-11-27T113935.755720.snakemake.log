@@ -1,3 +1,0 @@
-SyntaxError:
-Only input files can be specified as functions
-  File "/grid/siepel/home/khalid/argsortium-inference/preprocessing/Snakefile_copy", line 45, in <module>

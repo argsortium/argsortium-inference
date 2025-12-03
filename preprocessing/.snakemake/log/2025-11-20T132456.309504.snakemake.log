@@ -1,5 +1,0 @@
-ValueError in line 12 of /grid/siepel/home/khalid/argsortium-inference/preprocessing/Snakefile:
-No VCF files were proveded. Run Snake with:
- snakemake --cores XX --config vcf_list="$(ls *.vcf)"
-
-  File "/grid/siepel/home/khalid/argsortium-inference/preprocessing/Snakefile", line 12, in <module>

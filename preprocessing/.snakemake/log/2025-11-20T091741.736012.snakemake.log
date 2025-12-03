@@ -1,7 +1,0 @@
-Building DAG of jobs...
-Relative file path './preprocessed_vcfs/HERC5_locus_YRI_100_CHB_250.OutOfAfrica_3G09.no_multiallelics.afreq' starts with './'. This is redundant and strongly discouraged. It can also lead to inconsistent results of the file-matching approach used by Snakemake. You can simply omit the './' for relative file paths.
-Relative file path './preprocessed_vcfs/HERC5_locus_YRI_100_CHB_250.OutOfAfrica_3G09.no_multiallelics.vcf' starts with './'. This is redundant and strongly discouraged. It can also lead to inconsistent results of the file-matching approach used by Snakemake. You can simply omit the './' for relative file paths.
-Relative file path './preprocessed_vcfs/HERC5_locus_YRI_100_CHB_250.OutOfAfrica_3G09.no_multiallelics.afreq' starts with './'. This is redundant and strongly discouraged. It can also lead to inconsistent results of the file-matching approach used by Snakemake. You can simply omit the './' for relative file paths.
-Relative file path './preprocessed_vcfs/HERC5_locus_YRI_100_CHB_250.OutOfAfrica_3G09.no_multiallelics.vcf' starts with './'. This is redundant and strongly discouraged. It can also lead to inconsistent results of the file-matching approach used by Snakemake. You can simply omit the './' for relative file paths.
-Nothing to be done.
-Complete log: /grid/siepel/home/khalid/argsortium-inference/preprocessing/.snakemake/log/2025-11-20T091741.736012.snakemake.log
