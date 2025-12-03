@@ -1,0 +1,4 @@
+NameError in line 32 of /grid/siepel/home/khalid/argsortium-inference/preprocessing/Snakefile:
+name 'VCF_INFO' is not defined
+  File "/grid/siepel/home/khalid/argsortium-inference/preprocessing/Snakefile", line 32, in <module>
+  File "/grid/siepel/home/khalid/argsortium-inference/preprocessing/Snakefile", line 32, in <listcomp>

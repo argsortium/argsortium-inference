@@ -1,2 +1,2 @@
 *.sif
-container/activate_container.sh
+shared/container/activate_container.sh

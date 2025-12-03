@@ -1,61 +1,119 @@
 # Snakefile
-
 # Load the configuration file
+
 configfile: "config.yaml"
+singularity: "../shared/container/arg_inference_tools.sif"
+singularity_args: "--bind /grid:/grid" #Update singularity args to make the folders visible
 
 import os
+import glob
 
+# Get VCF files from pattern in config
+if "vcf_pattern" not in config:
+    raise ValueError(
+        "vcf_pattern must be specified in config.yaml\n"
+        "Add: vcf_pattern: 'path/to/*.vcf.gz'"
+    )
 
-# 1. Base name without vcf extension, derived from the input file
-INPUT_BASE = os.path.splitext(config["input_vcf_name"])[0] 
+vcf_pattern = config["vcf_pattern"]
+VCF_FILES = glob.glob(vcf_pattern)
 
-# 2. Define the intermediate VCF file with the required suffix
-INTERMEDIATE_VCF_SUFFIX = ".no_multiallelics.vcf"
-INTERMEDIATE_VCF_NAME = INPUT_BASE + INTERMEDIATE_VCF_SUFFIX
-INTERMEDIATE_VCF_PATH = os.path.join(config["output_dir"], INTERMEDIATE_VCF_NAME)
+if not VCF_FILES:
+    raise ValueError(
+        f"No VCF files found matching pattern: {vcf_pattern}\n"
+        "Check your vcf_pattern in config.yaml"
+    )
 
-# 3. Define the base name for PLINK output (used by --out)
-# PLINK's output base will be the same as the intermediate VCF, but without the .vcf extension
-PLINK_OUT_BASE = os.path.join(config["output_dir"], INPUT_BASE + ".no_multiallelics")
+# Get output directory, default to current directory
+OUTPUT_DIR = config.get("output_dir", ".")
 
-# 4. Define the final output file (the frequency file)
-FINAL_FREQ = PLINK_OUT_BASE + ".freq"
+# Extract basenames from VCF files
+VCF_BASENAMES = [
+    os.path.basename(vcf).replace('.vcf.gz', '').replace('.vcf', '')
+    for vcf in VCF_FILES
+]
 
+# Create mapping for input lookup
+VCF_MAP = {
+    os.path.basename(vcf).replace('.vcf.gz', '').replace('.vcf', ''): vcf
+    for vcf in VCF_FILES
+}
 
 rule all:
     input:
-        FINAL_FREQ
+        expand("{output_dir}/{vcf}.no_multiallelics.filtered.vcf.gz",
+               output_dir=OUTPUT_DIR,
+               vcf=VCF_BASENAMES)
 
-# --- Rule 1: Normalize VCF using bcftools ---
+# --- Rule 1: Normalize VCF using bcftools add chrom:pos:ref:alt as id in there---
 rule normalize_vcf:
     input:
-        vcf = config["input_vcf_name"]
-    
+        vcf = lambda wc: VCF_MAP[wc.vcf]
     output:
-        normalized_vcf = INTERMEDIATE_VCF_PATH
-    
-    # Run block to create the output directory before executing the command
+        normalized_vcf = "{output_dir}/{vcf}.no_multiallelics.vcf.gz"
     run:
-        os.makedirs(config["output_dir"], exist_ok=True)
-        shell("bcftools norm -m -H {input.vcf} > {output.normalized_vcf}")
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        shell("""
+        bcftools norm -m - {input.vcf} -Ou \
+            | bcftools annotate \
+                --set-id '%CHROM:%POS:%REF:%ALT' \
+            | bcftools view -Oz -o {output.normalized_vcf}
+        """)
 
 # --- Rule 2: Calculate Frequency using plink2 ---
 rule calculate_frequency:
     input:
-        normalized_vcf = rules.normalize_vcf.output.normalized_vcf
-        
+        normalized_vcf = "{output_dir}/{vcf}.no_multiallelics.vcf.gz"
     output:
-        freq_file = FINAL_FREQ
-        
+        freq_file = "{output_dir}/{vcf}.no_multiallelics.afreq"
     params:
-        # Pass the constructed base path to plink2's --out argument
-        out_base = PLINK_OUT_BASE
-        
-    shell:
-        """
+        out_base = "{output_dir}/{vcf}.no_multiallelics"
+    threads: 1
+    run:
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        shell("""
         plink2 --vcf {input.normalized_vcf} \
                --snps-only \
-               --set-all-var-ids @:#:$r:$a \
+               --set-all-var-ids @:#:\$r:\$a \
                --freq \
+               --out {params.out_base} \
+               --threads {threads}
+        """)
+
+#Rule 3: Create list of variants to keep in analysis
+rule pick_variants:
+    input:
+        allele_freq_file = "{output_dir}/{vcf}.no_multiallelics.afreq"
+    params:
+        exclusion_list = config.get("exclusion_list", "_NA"),
+        script_path = "./scripts/variant_selector.py",
+        add_chr = config.get("add_chr", True)
+    output:
+        var_incl_list = "{output_dir}/{vcf}.no_multiallelics.var_incl.list"
+    run:
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        shell("""
+        python {params.script_path} \
+            {input.allele_freq_file} \
+            {output.var_incl_list} \
+            --add_chr {params.add_chr} --exclusion_list {params.exclusion_list}
+        """)
+
+# --- Rule 4: Create final vcf file with var_incl.list
+rule final_filtering:
+    input:
+        var_incl_list = "{output_dir}/{vcf}.no_multiallelics.var_incl.list",
+        vcf_file = "{output_dir}/{vcf}.no_multiallelics.vcf.gz"
+    output:
+        filtered_vcf = "{output_dir}/{vcf}.no_multiallelics.filtered.vcf.gz"
+    params:
+        out_base = "{output_dir}/{vcf}.no_multiallelics.filtered"
+    threads: 1
+    run:
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        shell("""
+        plink2 --vcf {input.vcf_file} \
+               --extract {input.var_incl_list} \
+               --recode vcf bgz \
                --out {params.out_base}
-        """
+        """)

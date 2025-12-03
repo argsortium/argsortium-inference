@@ -1,0 +1,4 @@
+ValueError in line 21 of /grid/siepel/home/khalid/argsortium-inference/preprocessing/Snakefile:
+No VCF files found matching pattern: /mnt/2025_11_27/HomSap_OutOfAfrica_3G09/YRI_0_CEU_0_CHB_15/chr11_116827019_117727019_sim_seed1.mutated.vcf.gz
+Check your vcf_pattern in config.yaml
+  File "/grid/siepel/home/khalid/argsortium-inference/preprocessing/Snakefile", line 21, in <module>

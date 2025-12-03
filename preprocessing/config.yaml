@@ -1,7 +1,9 @@
 # config.yaml
 
 # Define the base VCF input file name
-input_vcf_name: "HERC5_locus_YRI_100_CHB_250.OutOfAfrica_3G09.vcf"
+vcf_pattern: "/grid/siepel/home/khalid/argsortium-outputs/2025_11_27/HomSap_OutOfAfrica_3G09/YRI_0_CEU_0_CHB_15/chr*mutated.vcf.gz"
 
-# Define the path where all output files should be placed
-output_dir: "./preprocessed_vcfs"
+# Define the path where all output files should be placed, if empty will be placed in the same folder as input_vcf
+output_dir: "/grid/siepel/home/khalid/argsortium-outputs/2025_11_27/HomSap_OutOfAfrica_3G09/YRI_0_CEU_0_CHB_15"
+
+add_chr: True #True if the input vcf has 'chr' before chromosome number (plink removes it by default)

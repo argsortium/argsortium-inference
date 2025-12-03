@@ -1,0 +1,2 @@
+SyntaxError in line 85 of /grid/siepel/home/khalid/argsortium-inference/preprocessing/Snakefile:
+Unexpected keyword singularity_args in rule definition (Snakefile, line 85)

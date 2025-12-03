@@ -6,7 +6,7 @@ From: continuumio/miniconda3:23.5.2-0
     Description "Miniconda base + samtools/bcftools (source) + plink2 + Java"
 
 %environment
-    export PATH="/opt/htslib/bin:/opt/samtools/bin:/opt/bcftools/bin:/opt/plink2:$PATH"
+    export PATH="/opt/conda/bin:/opt/htslib/bin:/opt/samtools/bin:/opt/bcftools/bin:/opt/plink2:$PATH"
     export LC_ALL=C.UTF-8
     export LANG=C.UTF-8
 
@@ -78,29 +78,35 @@ From: continuumio/miniconda3:23.5.2-0
   ###########################################################
   mkdir -p /opt/singer
   cd /opt/singer
-  git clone https://github.com/popgenmethods/SINGER.git
+  git clone https://github.com/argsortium/SINGER.git
   
-  ln -s /opt/singer/SINGER/SINGER/SINGER/singer_master singer_master
-  
+  ln -s /opt/singer/SINGER/SINGER/SINGER/singer_master /usr/local/bin/singer_master
 
   ##########################################################
-  #Relate 
+  #Relate #FIXME
   ##########################################################
+  mkdir -p /opt/relate
+  cd /opt/relate
+  #git clone https://github.com/MyersGroup/relate.git
   
-  #FIX ME  
-
+  #mv relate/old_versions/relate_v1.2.4_x86_64_static.tgz .
+  #tar -xvf relate_v1.2.4_x86_64_static.tgz
+  
+  #rm -rf relate
   #########################################################
   #Tsinfer + tsdate
   ########################################################
-  python3 -m pip install tsinfer --user
-  python3 -m pip install tsdate --user
-  python3 -m pip install zarr==2.18.4
-  
+  /opt/conda/bin/python -m pip install tsinfer tsdate zarr==2.18.4
 
   #######################################################
   #ArgNeedle
   #######################################################
-  python3 -m pip install arg-needle
+  /opt/conda/bin/python -m pip install arg-needle
+
+  #######################################################
+  #Python Packages
+  #######################################################
+  /opt/conda/bin/conda install -y numpy pandas
 
 %runscript
     echo "ARG inference environment loaded."

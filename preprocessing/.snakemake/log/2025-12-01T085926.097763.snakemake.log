@@ -1,0 +1,32 @@
+Building DAG of jobs...
+Using shell: /usr/bin/bash
+Provided cores: 1 (use --cores to define parallelism)
+Rules claiming more threads will be scaled down.
+Job counts:
+	count	jobs
+	1	all
+	1	final_filtering
+	1	pick_variants
+	3
+
+[Mon Dec  1 08:59:26 2025]
+rule pick_variants:
+    input: /grid/siepel/home/khalid/argsortium-outputs/2025_11_27/HomSap_OutOfAfrica_3G09/YRI_0_CEU_0_CHB_15/chr11_116827019_117727019_sim_seed1.mutated.no_multiallelics.afreq
+    output: /grid/siepel/home/khalid/argsortium-outputs/2025_11_27/HomSap_OutOfAfrica_3G09/YRI_0_CEU_0_CHB_15/chr11_116827019_117727019_sim_seed1.mutated.no_multiallelics.var_incl.list
+    jobid: 2
+    wildcards: output_dir=/grid/siepel/home/khalid/argsortium-outputs/2025_11_27/HomSap_OutOfAfrica_3G09/YRI_0_CEU_0_CHB_15, vcf=chr11_116827019_117727019_sim_seed1.mutated
+
+Activating singularity image ../shared/container/arg_inference_tools.sif
+[Mon Dec  1 08:59:27 2025]
+Error in rule pick_variants:
+    jobid: 2
+    output: /grid/siepel/home/khalid/argsortium-outputs/2025_11_27/HomSap_OutOfAfrica_3G09/YRI_0_CEU_0_CHB_15/chr11_116827019_117727019_sim_seed1.mutated.no_multiallelics.var_incl.list
+
+RuleException:
+CalledProcessError in line 84 of /grid/siepel/home/khalid/argsortium-inference/preprocessing/Snakefile:
+Command ' singularity exec --home /grid/siepel/home/khalid/argsortium-inference/preprocessing  --bind /cm/local/apps/python37/lib/python3.7/site-packages:/mnt/snakemake ../shared/container/arg_inference_tools.sif bash -c 'set -euo pipefail;  python /grid/siepel/home/khalid/argsortium-inference/preprocessing/.snakemake/scripts/tmpi_oyzie5.variant_selector.py'' returned non-zero exit status 1.
+  File "/grid/siepel/home/khalid/argsortium-inference/preprocessing/Snakefile", line 84, in __rule_pick_variants
+  File "/cm/local/apps/python37/lib/python3.7/concurrent/futures/thread.py", line 57, in run
+Shutting down, this might take some time.
+Exiting because a job execution failed. Look above for error message
+Complete log: /grid/siepel/home/khalid/argsortium-inference/preprocessing/.snakemake/log/2025-12-01T085926.097763.snakemake.log

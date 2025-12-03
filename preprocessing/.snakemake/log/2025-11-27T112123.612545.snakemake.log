@@ -1,0 +1,4 @@
+Building DAG of jobs...
+MissingInputException in line 29 of /grid/siepel/home/khalid/argsortium-inference/preprocessing/Snakefile:
+Missing input files for rule all:
+/sim_seed9.mutated.no_multiallelics.filtered.vcf.gz

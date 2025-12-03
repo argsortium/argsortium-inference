@@ -1,0 +1,7 @@
+Building DAG of jobs...
+Relative file path './preprocessed_vcfs/chr14.27572179.28322179.CHB_15.YRI_0.seed_12.no_multi_allelics.no_multiallelics.filtered.vcf' starts with './'. This is redundant and strongly discouraged. It can also lead to inconsistent results of the file-matching approach used by Snakemake. You can simply omit the './' for relative file paths.
+Relative file path './preprocessed_vcfs/chr14.27572179.28322179.CHB_15.YRI_0.seed_13.no_multi_allelics.no_multiallelics.filtered.vcf' starts with './'. This is redundant and strongly discouraged. It can also lead to inconsistent results of the file-matching approach used by Snakemake. You can simply omit the './' for relative file paths.
+MissingInputException in line 21 of /grid/siepel/home/khalid/argsortium-inference/preprocessing/Snakefile:
+Missing input files for rule all:
+./preprocessed_vcfs/chr14.27572179.28322179.CHB_15.YRI_0.seed_13.no_multi_allelics.no_multiallelics.filtered.vcf
+./preprocessed_vcfs/chr14.27572179.28322179.CHB_15.YRI_0.seed_12.no_multi_allelics.no_multiallelics.filtered.vcf

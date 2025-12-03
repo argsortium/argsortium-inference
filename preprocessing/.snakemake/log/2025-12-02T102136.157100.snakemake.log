@@ -1,0 +1,2 @@
+SyntaxError in line 85 of /grid/siepel/home/khalid/argsortium-inference/preprocessing/Snakefile:
+Colon expected after keyword container. (Snakefile, line 85)
