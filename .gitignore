@@ -1,2 +1,7 @@
 *.sif
 shared/container/activate_container.sh
+.snakemake
+*.swp
+.venv
+
+.ipynb_checkpoints
