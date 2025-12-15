@@ -1,7 +1,13 @@
+#files to ignore
 *.sif
-shared/container/activate_container.sh
-.snakemake
 *.swp
-.venv
+logfile
+#folders to ignore
+results/
+notebooks/
 
-.ipynb_checkpoints
+#hidden folders to ignore
+.snakemake/
+.venv/
+.ipynb_checkpoints/
+.bash_history

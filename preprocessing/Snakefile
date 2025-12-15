@@ -2,8 +2,7 @@
 # Load the configuration file
 
 configfile: "config.yaml"
-singularity: "../shared/container/arg_inference_tools.sif"
-singularity_args: "--bind /grid:/grid" #Update singularity args to make the folders visible
+container: config.get("singularity")
 
 import os
 import glob
@@ -50,15 +49,14 @@ rule normalize_vcf:
     input:
         vcf = lambda wc: VCF_MAP[wc.vcf]
     output:
-        normalized_vcf = "{output_dir}/{vcf}.no_multiallelics.vcf.gz"
-    run:
-        os.makedirs(OUTPUT_DIR, exist_ok=True)
-        shell("""
+        normalized_vcf = temp("{output_dir}/{vcf}.no_multiallelics.vcf.gz")
+    shell:
+        """
         bcftools norm -m - {input.vcf} -Ou \
             | bcftools annotate \
                 --set-id '%CHROM:%POS:%REF:%ALT' \
             | bcftools view -Oz -o {output.normalized_vcf}
-        """)
+        """
 
 # --- Rule 2: Calculate Frequency using plink2 ---
 rule calculate_frequency:
@@ -69,16 +67,15 @@ rule calculate_frequency:
     params:
         out_base = "{output_dir}/{vcf}.no_multiallelics"
     threads: 1
-    run:
-        os.makedirs(OUTPUT_DIR, exist_ok=True)
-        shell("""
+    shell:
+        """
         plink2 --vcf {input.normalized_vcf} \
                --snps-only \
                --set-all-var-ids @:#:\$r:\$a \
                --freq \
                --out {params.out_base} \
                --threads {threads}
-        """)
+        """
 
 #Rule 3: Create list of variants to keep in analysis
 rule pick_variants:
@@ -90,14 +87,13 @@ rule pick_variants:
         add_chr = config.get("add_chr", True)
     output:
         var_incl_list = "{output_dir}/{vcf}.no_multiallelics.var_incl.list"
-    run:
-        os.makedirs(OUTPUT_DIR, exist_ok=True)
-        shell("""
+    shell:
+        """
         python {params.script_path} \
             {input.allele_freq_file} \
             {output.var_incl_list} \
             --add_chr {params.add_chr} --exclusion_list {params.exclusion_list}
-        """)
+        """
 
 # --- Rule 4: Create final vcf file with var_incl.list
 rule final_filtering:
@@ -109,11 +105,10 @@ rule final_filtering:
     params:
         out_base = "{output_dir}/{vcf}.no_multiallelics.filtered"
     threads: 1
-    run:
-        os.makedirs(OUTPUT_DIR, exist_ok=True)
-        shell("""
+    shell:
+        """
         plink2 --vcf {input.vcf_file} \
                --extract {input.var_incl_list} \
                --recode vcf bgz \
                --out {params.out_base}
-        """)
+        """

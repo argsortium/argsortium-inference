@@ -1,0 +1,98 @@
+# Snakefile
+# # Load the configuration file
+configfile: "config.yaml"
+
+import csv
+
+params = {}
+uids = []
+
+with open(config["params_file"]) as f:
+    reader = csv.DictReader(f)
+    for row in reader:
+        uid = row["uid"]
+        params[uid] = row
+        uids.append(uid)
+
+OUTPUT_DIR = config["output_dir"]
+step_size = config.get("step_size", 5)
+
+START_ITER = 0 #this is to set the conversion to tskit
+
+N = config.get("mcmc_samples")
+FINAL_ITER = N - 1
+
+FINAL_TSKIT_FILE = range(START_ITER, N, step_size)[-1]
+
+resume = config.get("resume", False)
+RESUME_FLAG = "-resume" if resume else ""
+
+# ---- rule all ----
+rule all:
+    input: expand(f"{OUTPUT_DIR}/{{uid}}.singer.tskit_{FINAL_TSKIT_FILE}.trees", uid=uids)
+
+rule unzip_vcf:
+    input: vcf=lambda wc: params[wc.uid]["vcf_file"]
+    output: vcf=temp("{OUTPUT_DIR}/{uid}.vcf")
+    container: config.get("singularity")
+    shell:
+        """
+        bgzip -d {input.vcf} -o {output.vcf}
+        """
+#---- run Singer inference tool ---
+rule run_singer:
+    input:
+        vcf=f"{OUTPUT_DIR}/{{uid}}.vcf"
+    output:
+        recombs=f"{OUTPUT_DIR}/{{uid}}.singer_recombs_{FINAL_ITER}.txt",
+        muts=f"{OUTPUT_DIR}/{{uid}}.singer_muts_{FINAL_ITER}.txt",
+        nodes=f"{OUTPUT_DIR}/{{uid}}.singer_nodes_{FINAL_ITER}.txt",
+        branches=f"{OUTPUT_DIR}/{{uid}}.singer_branches_{FINAL_ITER}.txt",
+    params:
+        Ne=config.get("Ne", 20000),
+        mu=lambda wc: params[wc.uid]["mu"],
+        start=lambda wc: params[wc.uid]["start"],
+        end=lambda wc: params[wc.uid]["end"],
+        polar=config.get("polar", 0.99),
+        recomb_map=lambda wc: params[wc.uid]["recomb_map"],
+        out_prefix=f"{OUTPUT_DIR}/{{uid}}.singer",
+        resume_flag=RESUME_FLAG,
+        vcf_base=f"{OUTPUT_DIR}/{{uid}}"
+    container:
+        config.get("singularity")
+    shell:
+        """
+        singer_master \
+          -Ne {params.Ne} \
+          -m {params.mu} \
+          -recomb_map {params.recomb_map} \
+          -start {params.start} \
+          -end {params.end} \
+          -n {N} \
+          -polar {params.polar} \
+          {params.resume_flag} \
+          -output {params.out_prefix} \
+          -vcf {params.vcf_base}
+        """
+
+rule convert_to_tskit:
+    input:
+        recombs=f"{OUTPUT_DIR}/{{uid}}.singer_recombs_{FINAL_ITER}.txt",
+        muts=f"{OUTPUT_DIR}/{{uid}}.singer_muts_{FINAL_ITER}.txt",
+        nodes=f"{OUTPUT_DIR}/{{uid}}.singer_nodes_{FINAL_ITER}.txt",
+        branches=f"{OUTPUT_DIR}/{{uid}}.singer_branches_{FINAL_ITER}.txt"
+    output:
+        trees=f"{OUTPUT_DIR}/{{uid}}.singer.tskit_{FINAL_TSKIT_FILE}.trees"
+    params:
+        prefix=f"{OUTPUT_DIR}/{{uid}}.singer"
+    container:
+        config.get("singularity")
+    shell:
+        """
+        convert_to_tskit \
+          -input {params.prefix} \
+          -output {params.prefix}.tskit \
+          -start 0 \
+          -end {N} \
+          -step {step_size}
+        """

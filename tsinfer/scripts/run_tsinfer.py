@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import tsinfer
+import msprime
 import zarr
 import pyfaidx
 import tsdate
@@ -23,7 +24,7 @@ def main():
         help="Output directory (default: same folder as input .vcz)"
     )
     parser.add_argument(
-        "--recomb-rate", type=float, default=1.36e-8,
+        "--recomb-map",required=True,
         help="Per-site recombination rate (default: 1.36e-8)"
     )
     parser.add_argument(
@@ -50,7 +51,7 @@ def main():
     base = os.path.splitext(os.path.basename(args.zarr))[0]
     if base.endswith(".vcf"):  # safeguard if file is like sample.vcf.vcz
         base = os.path.splitext(base)[0]
-    output_path = os.path.join(outdir, base + ".trees")
+    output_path = os.path.join(outdir, base + ".tsinfer.trees")
 
     # derive output name by stripping ".vcz" (if present)
     #base = os.path.splitext(args.zarr)[0]
@@ -76,12 +77,13 @@ def main():
 
     # Add ancestral states
     tsinfer.add_ancestral_state_array(vcf_zarr, ancestral_str)
-
+    #read in RateMap
+    recombination_map = msprime.RateMap.read_hapmap(args.recomb_map, position_col = 1, rate_col = 2)
     # Run tsinfer
     vdata = tsinfer.VariantData(args.zarr, ancestral_state="ancestral_state")
     inferred_ts = tsinfer.infer(
         vdata,
-        recombination_rate=args.recomb_rate,
+        recombination_rate=recombination_map,
         num_threads=args.threads
     )
     print(f"Inferred a genetic genealogy for {inferred_ts.num_samples} (haploid) genomes")

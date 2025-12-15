@@ -2,8 +2,8 @@ Bootstrap: docker
 From: continuumio/miniconda3:23.5.2-0
 
 %labels
-    Author YourName
-    Description "Miniconda base + samtools/bcftools (source) + plink2 + Java"
+    Author ShareefKhalid
+    Description "Miniconda base + htslib/bgzip (source) + bcftools (source) + plink2 + Java"
 
 %environment
     export PATH="/opt/conda/bin:/opt/htslib/bin:/opt/samtools/bin:/opt/bcftools/bin:/opt/plink2:$PATH"
@@ -33,8 +33,25 @@ From: continuumio/miniconda3:23.5.2-0
     && rm -rf /var/lib/apt/lists/*
 
     ############################################################
+    # Install htslib (provides bgzip, tabix)
+    ############################################################
+    echo "Installing htslib"
+    mkdir -p /opt/htslib
+    cd /opt/htslib
+    wget https://github.com/samtools/htslib/releases/download/1.22/htslib-1.22.tar.bz2
+    tar -xjf htslib-1.22.tar.bz2
+    cd htslib-1.22
+    ./configure --disable-libcurl --disable-ref-cache --prefix=/opt/htslib/1.22
+    make -j$(nproc)
+    make install
+
+    ln -s /opt/htslib/1.22/bin/bgzip /usr/local/bin/bgzip
+    ln -s /opt/htslib/1.22/bin/tabix /usr/local/bin/tabix
+
+    ############################################################
     # Install PLINK2
     ############################################################
+    echo "installing plink2"
     mkdir -p /opt/plink2
     cd /opt/plink2
 
@@ -44,71 +61,97 @@ From: continuumio/miniconda3:23.5.2-0
 
     chmod +x plink2
     ln -s /opt/plink2/plink2 /usr/local/bin/plink2
+
+    ############################################################
+    # Install bcftools (linked against htslib)
+    ############################################################
+    echo "install bcftools"
+    mkdir -p /opt/bcftools
+    cd /opt/bcftools
+    wget https://github.com/samtools/bcftools/releases/download/1.22/bcftools-1.22.tar.bz2
+    tar -xjf bcftools-1.22.tar.bz2
+    cd bcftools-1.22
+    ./configure \
+        --with-htslib=/opt/htslib/1.22 \
+        --disable-libcurl \
+        --prefix=/opt/bcftools/1.22
+    make -j$(nproc)
+    make install
+    ln -s /opt/bcftools/1.22/bin/bcftools /usr/local/bin/bcftools
+
+    ############################################################
+    # Install ArgWeaver
+    ############################################################
+    mkdir -p /opt/argweaver
+    cd /opt/argweaver
+    wget https://github.com/mdrasmus/argweaver/zipball/master
+    unzip master
+    cd mdrasmus-argweaver-fee3d32
+    make
+    ln -s /opt/argweaver/mdrasmus-argweaver-fee3d32/bin/arg-sample /usr/local/bin/arg-sample
+    ln -s /opt/argweaver/mdrasmus-argweaver-fee3d32/bin/arg-summarize /usr/local/bin/arg-summarize
+    ln -s /opt/argweaver/mdrasmus-argweaver-fee3d32/bin/smc2bed /usr/local/bin/smc2bed
+
+
+    ############################################################
+    # Install Singer
+    ###########################################################
+    mkdir -p /opt/singer
+    cd /opt/singer
+    git clone https://github.com/argsortium/SINGER.git
+
+    chmod +x /opt/singer/SINGER/SINGER/SINGER/convert_to_tskit
+    chmod +x /opt/singer/SINGER/SINGER/SINGER/singer_master
+
+    ln -s /opt/singer/SINGER/SINGER/SINGER/singer_master /usr/local/bin/singer_master
+    ln -s /opt/singer/SINGER/SINGER/SINGER/convert_to_tskit /usr/local/bin/convert_to_tskit
     
-   ###########################################################
-   # Install bcftools
-   ###########################################################
-   mkdir -p /opt/bcftools
-   cd /opt/bcftools
-   wget https://github.com/samtools/bcftools/releases/download/1.22/bcftools-1.22.tar.bz2
-   tar -xvf bcftools-1.22.tar.bz2
-   cd bcftools-1.22
-   ./configure --disable-libcurl --disable-ref-cache --prefix=/opt/bcftools/bcftools-1.22/
-   make
-   make install
-   chmod +x bcftools
-   ln -s /opt/bcftools/bcftools-1.22/bcftools /usr/local/bin/bcftools
+    rm -rf .git
 
-  ############################################################
-  # Install ArgWeaver
-  ############################################################
-  mkdir -p /opt/argweaver
-  cd /opt/argweaver
-  wget https://github.com/mdrasmus/argweaver/zipball/master
-  unzip master
-  cd mdrasmus-argweaver-fee3d32
-  make
-  ln -s /opt/argweaver/mdrasmus-argweaver-fee3d32/bin/arg-sample /usr/local/bin/arg-sample
-  ln -s /opt/argweaver/mdrasmus-argweaver-fee3d32/bin/arg-summarize /usr/local/bin/arg-summarize
-  ln -s /opt/argweaver/mdrasmus-argweaver-fee3d32/bin/smc2bed /usr/local/bin/smc2bed
-  
-  
-  ############################################################
-  # Install Singer
-  ###########################################################
-  mkdir -p /opt/singer
-  cd /opt/singer
-  git clone https://github.com/argsortium/SINGER.git
-  
-  ln -s /opt/singer/SINGER/SINGER/SINGER/singer_master /usr/local/bin/singer_master
+    ##########################################################
+    # Relate (static binaries)
+    ##########################################################
+    mkdir -p /opt/relate
+    cd /opt/relate
 
-  ##########################################################
-  #Relate #FIXME
-  ##########################################################
-  mkdir -p /opt/relate
-  cd /opt/relate
-  #git clone https://github.com/MyersGroup/relate.git
-  
-  #mv relate/old_versions/relate_v1.2.4_x86_64_static.tgz .
-  #tar -xvf relate_v1.2.4_x86_64_static.tgz
-  
-  #rm -rf relate
-  #########################################################
-  #Tsinfer + tsdate
-  ########################################################
-  /opt/conda/bin/python -m pip install tsinfer tsdate zarr==2.18.4
+    # Download static Relate binaries from github
+    wget https://github.com/MyersGroup/relate/raw/master/old_versions/relate_v1.2.4_x86_64_static.tgz
+    tar -xvf relate_v1.2.4_x86_64_static.tgz
 
-  #######################################################
-  #ArgNeedle
-  #######################################################
-  /opt/conda/bin/python -m pip install arg-needle
+    # Expose Relate binaries
+    RELATE_BIN="/opt/relate/relate_v1.2.4_x86_64_static/bin"
 
-  #######################################################
-  #Python Packages
-  #######################################################
-  /opt/conda/bin/conda install -y numpy pandas
+    for exe in Relate RelateCoalescentRate RelateExtract RelateFileFormats RelateMutationRate RelateSelection RelateTreeView; do
+        ln -sf ${RELATE_BIN}/${exe} /usr/local/bin/${exe}
+    done
+
+    rm relate_v1.2.4_x86_64_static.tgz
+
+    #########################################################
+    #Tsinfer + tsdate
+    ########################################################
+    /opt/conda/bin/python -m pip install --no-cache-dir biopython==1.86 pyfaidx==0.9.0.3
+    /opt/conda/bin/python -m pip install --no-cache-dir bio2zarr[all] zarr==2.18.4
+    /opt/conda/bin/python -m pip install --no-cache-dir tskit==0.6.4 tsinfer==0.5.0 tsdate==0.2.4
+
+    #######################################################
+    #ArgNeedle + Threads
+    #######################################################
+    /opt/conda/bin/python -m pip install --no-cache-dir arg-needle
+    /opt/conda/bin/python -m pip install --no-cache-dir threads_arg
+
+    #######################################################
+    #Python Packages
+    #######################################################
+    /opt/conda/bin/python -m pip install --no-cache-dir numpy pandas
+
+
+    ######################################################
+    #Cleanup (size reduction)
+    ######################################################
+    conda clean -afy
+    rm -rf /root/.cache/pip
 
 %runscript
     echo "ARG inference environment loaded."
     exec /bin/bash "$@"
-

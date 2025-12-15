@@ -7,3 +7,5 @@ vcf_pattern: "/grid/siepel/home/khalid/argsortium-outputs/2025_11_27/HomSap_OutO
 output_dir: "/grid/siepel/home/khalid/argsortium-outputs/2025_11_27/HomSap_OutOfAfrica_3G09/YRI_0_CEU_0_CHB_15"
 
 add_chr: True #True if the input vcf has 'chr' before chromosome number (plink removes it by default)
+
+singularity: "../shared/container/arg_inference_tools.sif"

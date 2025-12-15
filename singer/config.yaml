@@ -1,0 +1,15 @@
+# config.yaml
+
+#container
+singularity: "../shared/container/arg_inference_tools.sif"
+# Define the path where all output files should be placed, if empty will be placed in the same folder as input_vcf
+output_dir: "/grid/siepel/home/khalid/argsortium-outputs/2025_11_27/inferred_args/singer/YRI_0_CEU_0_CHB_15"
+
+params_file: "/grid/siepel/home/khalid/argsortium-outputs/2025_11_27/HomSap_OutOfAfrica_3G09/YRI_0_CEU_0_CHB_15/2025_11_27_YRI_0_CEU_0_CHB_15_params_file.csv"
+
+mcmc_samples : 1000
+resume: False #Set to true if increasing number of resamples
+step_size: 10
+Ne: 20000
+polar: 0.99 #set to 0.99 for polarized data
+
