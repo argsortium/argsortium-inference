@@ -1,0 +1,140 @@
+# Snakefile for Relate with branch resampling
+configfile: "config.yaml"
+
+import csv
+
+
+def to_int(val, default=0):
+    try:
+        return int(val)
+    except Exception:
+        return default
+
+def to_float(val, default=0.0):
+    try:
+        return float(val)
+    except Exception:
+        return default
+
+params = {}
+uids = []
+
+with open(config["params_file"]) as f:
+    reader = csv.DictReader(f)
+    for row in reader:
+        uid = row["uid"]
+        params[uid] = row
+        uids.append(uid)
+
+OUTPUT_DIR = config["output_dir"]
+MU_DEFAULT = to_float(config.get("mu", 2.35e-8), 2.35e-8)
+NE = to_float(config.get("Ne", 40000), 40000)
+ITER_START = to_int(config.get("iter_start", 0), 0)
+ITER_END = to_int(config.get("iter_end", 0), 0)
+THIN_EVERY = to_int(config.get("thin_every", 0), 0)
+
+rule all:
+    input: [f"{OUTPUT_DIR}/{uid}.relate.sample{ITER_END}.trees" for uid in uids]
+
+# Convert VCF to HAPS/SAMPLE
+rule vcf_to_haps:
+    input:
+        vcf=lambda wc: params[wc.uid]["vcf_file"],
+    output:
+        haps=temp(f"{OUTPUT_DIR}/{{uid}}.haps"),
+        sample=temp(f"{OUTPUT_DIR}/{{uid}}.sample"),
+    container:
+        config.get("singularity")
+    shell:
+        """
+        RelateFileFormats --mode ConvertFromVcf \
+            --haps {output.haps} \
+            --sample {output.sample} \
+            -i {input.vcf}
+        """
+
+# Run Relate with branch resampling and convert to tree sequence
+rule run_relate_branch_resampling:
+    input:
+        haps=f"{OUTPUT_DIR}/{{uid}}.haps",
+        sample=f"{OUTPUT_DIR}/{{uid}}.sample",
+    output:
+        trees=lambda wc: f"{OUTPUT_DIR}/{wc.uid}.relate.sample{ITER_END}.trees",
+    params:
+        map=lambda wc: params[wc.uid]["recomb_map"],
+        mu=lambda wc: to_float(params[wc.uid].get("mu", MU_DEFAULT), MU_DEFAULT),
+        Ne=NE,
+        iter_start=ITER_START,
+        iter_end=ITER_END,
+        thin_every=THIN_EVERY,
+        prefix=lambda wc: f"{OUTPUT_DIR}/{wc.uid}.relate",
+    container:
+        config.get("singularity")
+    shell:
+        r"""
+        set -euo pipefail
+
+        PREFIX="{params.prefix}"
+        ITER_START="{params.iter_start}"
+        ITER_END="{params.iter_end}"
+        MU="{params.mu}"
+        NE="{params.Ne}"
+        MAP="{params.map}"
+        THIN_EVERY="{params.thin_every}"
+
+        Relate --mode All \
+          -m "${MU}" \
+          -N "${NE}" \
+          --haps {input.haps} \
+          --sample {input.sample} \
+          --map "${MAP}" \
+          -o "${PREFIX}.sample${ITER_START}"
+
+        for i in $(seq "${ITER_START}" "${ITER_END}"); do
+          /opt/relate/relate_lib/bin/Convert --mode ConvertToTreeSequence \
+            --anc "${PREFIX}.sample${i}.anc" \
+            --mut "${PREFIX}.sample${i}.mut" \
+            -o "${PREFIX}.sample${i}"
+
+          RelateCoalescentRate --mode EstimatePopulationSize \
+            -i "${PREFIX}.sample${i}" \
+            -o "${PREFIX}.sample${i}"
+
+          RelateMutationRate --mode Avg \
+            -i "${PREFIX}.sample${i}" \
+            -o "${PREFIX}.sample${i}"
+
+          RelateCoalescentRate --mode ReEstimateBranchLengths \
+            -i "${PREFIX}.sample${i}" \
+            --mrate "${PREFIX}.sample${i}_avg.rate" \
+            -m "${MU}" \
+            --coal "${PREFIX}.sample${i}.coal" \
+            -o "${PREFIX}.sample$((i+1))"
+
+          # Remove auxiliary files every iteration
+          rm -f \
+            "${PREFIX}.sample${i}_avg.rate" \
+            "${PREFIX}.sample${i}.coal" \
+            "${PREFIX}.sample${i}.popsize" \
+            "${PREFIX}.sample${i}.mutrate" \
+            "${PREFIX}.sample${i}.bin"
+
+          # Thin heavy outputs unless zero, divisible by THIN_EVERY, or final iteration
+          keep_iter="false"
+          if [ "${i}" -eq 0 ]; then
+            keep_iter="true"
+          elif [ "${THIN_EVERY}" -gt 0 ] && [ $(( i % THIN_EVERY )) -eq 0 ]; then
+            keep_iter="true"
+          elif [ "${i}" -eq "${ITER_END}" ]; then
+            keep_iter="true"
+          elif [ "${THIN_EVERY}" -le 0 ]; then
+            keep_iter="true"
+          fi
+
+          if [ "${keep_iter}" != "true" ]; then
+            rm -f \
+              "${PREFIX}.sample${i}.trees" \
+              "${PREFIX}.sample${i}.anc" \
+              "${PREFIX}.sample${i}.mut"
+          fi
+        done

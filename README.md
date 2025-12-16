@@ -1,12 +1,13 @@
 # ARGsortium Inference Workflows
 
-Snakemake workflows for ARG inference and preprocessing. Each inference pipeline consumes a params CSV (one row per contig/region) so runs can be parallelized cleanly. Current Snakemake implementations cover preprocessing, Singer, and tsinfer+tsdate; helper scripts for ArgWeaver, Relate, and ArgNeedle are included for future wiring.
+Snakemake workflows for ARG inference and preprocessing. Each inference pipeline consumes a params CSV (one row per contig/region) so runs can be parallelized cleanly. Current Snakemake implementations cover preprocessing, Singer, tsinfer+tsdate, and Relate (branch resampling). Helper scripts for ArgWeaver and ArgNeedle are included for future wiring.
 
 ## Repository layout
 - `preprocessing/` – VCF cleanup (normalize, frequency calc, variant picking) before inference.
 - `tsinfer/` – Snakemake pipeline for tsinfer + tsdate (`scripts/run_tsinfer.py`).
 - `singer/` – Snakemake pipeline wrapping Singer and conversion to tskit.
-- `argweaver/`, `relate/`, `argneedle/` – helper scripts (conversion, format prep); no Snakefiles yet.
+- `relate/` – Snakemake pipeline for Relate with branch resampling plus helper scripts.
+- `argweaver/`, `argneedle/` – helper scripts (conversion, format prep) not yet wired into Snakemake.
 - `shared/container/arg_inference_tools.def|.sif` – Singularity recipe/image with toolchain (htslib/bgzip, bcftools, plink2, argweaver, Singer, Relate, Python deps).
 - `pyproject.toml` – pins Snakemake (`>=3.12` Python).
 
@@ -18,7 +19,7 @@ Snakemake workflows for ARG inference and preprocessing. Each inference pipeline
 - Python 3.12+; Snakemake version is pinned via `uv` in this repo (`pyproject.toml`).
 - Input data: gzipped, phased VCFs for inference workflows; reference FASTA, recombination maps, and params CSV as described below.
 
-## Params CSV schema (used by Singer + tsinfer workflows)
+## Params CSV schema (shared across workflows)
 Provide one row per contig/region you want to infer. Columns used today:
 
 | column          | description                                   | used by      |
@@ -31,6 +32,8 @@ Provide one row per contig/region you want to infer. Columns used today:
 | `ancestral_fasta` | FASTA with ancestral states                  | tsinfer      |
 | `seed`          | random seed (not yet consumed in code)        | tsinfer      |
 | `start`, `end`  | region bounds (passed to Singer; not used elsewhere) | Singer |
+
+Relate takes `Ne`, `iter_start`, `iter_end`, and `thin_every` from the config file (not the params CSV).
 
 Add any extra columns you need; Snakemake will ignore unused fields.
 
@@ -81,12 +84,27 @@ uv run snakemake -s singer/Snakefile --configfile singer/config.yaml --use-singu
 ```
 Outputs: Singer text outputs and `{output_dir}/{uid}.singer.tskit_<iter>.trees`.
 
+## Relate workflow (branch resampling)
+Converts VCFs to HAPS/SAMPLE, runs `Relate --mode All`, performs branch-length resampling iterations, and converts each iteration to a tree sequence (final file from `iter_end` is tracked).
+
+Key config (`relate/config.yaml`):
+- `params_file`: path to the params CSV (needs `uid`, `vcf_file`, `recomb_map`; optional per-row override: `mu`).
+- `output_dir`: destination for HAPS/SAMPLE, Relate outputs, and `.trees`.
+- `mu` (config default), `Ne`, `iter_start`, `iter_end`: applied globally from the config file.
+- `thin_every`: if >0, keep only iteration 0, multiples of this value, and `iter_end`; others are removed. Auxiliary `_avg.rate`, `.coal`, `.popsize`, `.mutrate`, `.bin` files are always removed after use.
+- `singularity`: container path.
+
+Run (via `uv`):
+```bash
+uv run snakemake -s relate/Snakefile --configfile relate/config.yaml --use-singularity --singularity-args '--bind /path:/path' --cores 8
+```
+Outputs: `{output_dir}/{uid}.haps`, `{uid}.sample`, Relate anc/mut and resampled files, and final `{output_dir}/{uid}.relate.sample{iter_end}.trees`.
+
 ## Other tools
 - ArgWeaver helpers: `argweaver/scripts/vcf2sites.py` (VCF→.sites) and `argweaver/scripts/argweaver_to_tskit.py` (conversion; marked experimental).
-- Relate helpers: `relate/scripts/runRelateVcf2tskit.sh` and `runRelateWBranchResampling.sh` for end-to-end runs and branch resampling.
 - ArgNeedle helpers: `argneedle/scripts/create_map_file.sh`, `haps2tskit.sh`, `argn_to_tskit.py`.
 
-These scripts are provided as references and are not yet wired into Snakemake.
+ArgWeaver and ArgNeedle scripts are provided as references and are not yet wired into Snakemake.
 
 ## Tips
 - All workflows expect bgzipped VCFs; preprocessing will normalize IDs and ensure biallelic variants.

@@ -1,0 +1,20 @@
+# config.yaml for Relate Snakemake workflow
+
+# Singularity image path
+singularity: "../shared/container/arg_inference_tools.sif"
+
+# Outputs will be written here
+output_dir: "/path/to/output/relate"
+
+# Params CSV (one row per region)
+params_file: "/path/to/params.csv"
+
+# Config-level defaults (applied to all rows)
+mu: 2.35e-8
+Ne: 40000
+iter_start: 0
+iter_end: 0
+thin_every: 0  # 0 disables thinning; otherwise keep only iterations divisible by this value (plus 0 and iter_end)
+
+# Optional: threads (not currently used by Relate commands)
+threads: 1
