@@ -2,6 +2,13 @@
 
 Snakemake workflows for ARG inference and preprocessing. Each inference pipeline consumes a params CSV (one row per contig/region) so runs can be parallelized cleanly. Current Snakemake implementations cover preprocessing, Singer, tsinfer+tsdate, and Relate (branch resampling). Helper scripts for ArgWeaver and ArgNeedle are included for future wiring.
 
+## Table of contents
+- [Preprocessing](#preprocessing-workflow)
+- [Singer](#singer-workflow)
+- [Relate](#relate-workflow-branch-resampling)
+- [tsinfer](#tsinfer--tsdate-workflow)
+- [Other tools / In Dev](#other-tools--in-dev)
+
 ## Repository layout
 - `preprocessing/` – VCF cleanup (normalize, frequency calc, variant picking) before inference.
 - `tsinfer/` – Snakemake pipeline for tsinfer + tsdate (`scripts/run_tsinfer.py`).
