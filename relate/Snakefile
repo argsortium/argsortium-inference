@@ -134,7 +134,7 @@ rule run_relate_mcmc:
 
         for i in $(seq "${{ITER_START}}" "${{ITER_END}}"); do
           
-          /opt/relate/relate_lib/bin/Convert --mode ConvertToTreeSequence \
+          /opt/relate_lib/relate_lib/bin/Convert --mode ConvertToTreeSequence \
             --anc "${{PREFIX}}.sample${{i}}.anc" \
             --mut "${{PREFIX}}.sample${{i}}.mut" \
             -o "${{PREFIX}}.sample${{i}}"

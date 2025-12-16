@@ -20,6 +20,7 @@ From: continuumio/miniconda3:23.5.2-0
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         default-jre \
         default-jdk \
+        cmake \
         build-essential \
         wget curl unzip bzip2 gzip \
         libbz2-dev liblzma-dev libz-dev \
@@ -126,7 +127,15 @@ From: continuumio/miniconda3:23.5.2-0
     done
 
     rm relate_v1.2.4_x86_64_static.tgz
-
+    
+    mkdir -p /opt/relate_lib
+    cd /opt/relate_lib
+    git clone https://github.com/leospeidel/relate_lib.git
+    cd relate_lib
+    mkdir build
+    cd build
+    cmake ..  -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+    make
     #########################################################
     #Tsinfer + tsdate
     ########################################################
