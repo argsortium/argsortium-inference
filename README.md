@@ -33,8 +33,6 @@ Provide one row per contig/region you want to infer. Columns used today:
 | `seed`          | random seed (not yet consumed in code)        | tsinfer      |
 | `start`, `end`  | region bounds (passed to Singer; not used elsewhere) | Singer |
 
-Relate takes `Ne`, `iter_start`, `iter_end`, and `thin_every` from the config file (not the params CSV).
-
 Add any extra columns you need; Snakemake will ignore unused fields.
 
 ## Preprocessing workflow
@@ -100,9 +98,10 @@ uv run snakemake -s relate/Snakefile --configfile relate/config.yaml --use-singu
 ```
 Outputs: `{output_dir}/{uid}.haps`, `{uid}.sample`, Relate anc/mut and resampled files, and final `{output_dir}/{uid}.relate.sample{iter_end}.trees`.
 
-## Other tools
+## Other tools / In Dev
 - ArgWeaver helpers: `argweaver/scripts/vcf2sites.py` (VCF→.sites) and `argweaver/scripts/argweaver_to_tskit.py` (conversion; marked experimental).
 - ArgNeedle helpers: `argneedle/scripts/create_map_file.sh`, `haps2tskit.sh`, `argn_to_tskit.py`.
+- POLEGON: branch length estimation
 
 ArgWeaver and ArgNeedle scripts are provided as references and are not yet wired into Snakemake.
 
