@@ -18,6 +18,33 @@ Snakemake workflows for ARG inference and preprocessing. Each inference pipeline
 - `shared/container/arg_inference_tools.def|.sif` – Singularity recipe/image with toolchain (htslib/bgzip, bcftools, plink2, argweaver, Singer, Relate, Python deps).
 - `pyproject.toml` – pins Snakemake (`>=3.12` Python).
 
+```
+preprocessing/
+|- Snakefile
+|- config.yaml
+`- scripts/
+   `- variant_selector.py
+
+singer/
+|- Snakefile
+`- config.yaml
+
+relate/
+|- Snakefile
+|- config.yaml
+`- scripts/
+   |- process_mapfile.py
+   |- runRelateVcf2tskit.sh
+   `- runRelateWBranchResampling.sh
+
+tsinfer/
+|- Snakefile
+|- config.yaml
+`- scripts/
+   |- convert_vcf_to_zarr.sh
+   `- run_tsinfer.py
+```
+
 ## Prerequisites
 - Singularity/Apptainer is required; build the bundled image:
   ```bash
