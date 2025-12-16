@@ -36,6 +36,18 @@ THIN_EVERY = to_int(config.get("thin_every", 0), 0)
 rule all:
     input: [f"{OUTPUT_DIR}/{uid}.relate.sample{ITER_END}.trees" for uid in uids]
 
+# Process HapMap File
+rule process_hapmap_file:
+    input:
+        map_file=lambda wc: params[wc.uid]["recomb_map"]
+    output:
+        processed_map=temp(f"{OUTPUT_DIR}/{{uid}}.hapmap.processed.relate")
+    container: config.get("singularity")
+    shell:
+        """
+        ./scripts/process_mapfile.py {input.map_file} -o {output.processed_map}
+        """
+
 # Convert VCF to HAPS/SAMPLE
 rule vcf_to_haps:
     input:
@@ -43,98 +55,130 @@ rule vcf_to_haps:
     output:
         haps=temp(f"{OUTPUT_DIR}/{{uid}}.haps"),
         sample=temp(f"{OUTPUT_DIR}/{{uid}}.sample"),
+    params:
+        working_dir = OUTPUT_DIR,
+        vcf_base = lambda wc: params[wc.uid]["vcf_file"].removesuffix(".vcf.gz"),
     container:
-        config.get("singularity")
+        config.get("singularity"),
     shell:
         """
+        cd "{params.working_dir}"
         RelateFileFormats --mode ConvertFromVcf \
             --haps {output.haps} \
             --sample {output.sample} \
-            -i {input.vcf}
+            -i {params.vcf_base}
         """
-
-# Run Relate with branch resampling and convert to tree sequence
-rule run_relate_branch_resampling:
+# Run initial iteration of relate
+rule run_relate_init:
     input:
         haps=f"{OUTPUT_DIR}/{{uid}}.haps",
         sample=f"{OUTPUT_DIR}/{{uid}}.sample",
+        map_file=f"{OUTPUT_DIR}/{{uid}}.hapmap.processed.relate",
     output:
-        trees=lambda wc: f"{OUTPUT_DIR}/{wc.uid}.relate.sample{ITER_END}.trees",
+        anc=f"{OUTPUT_DIR}/{{uid}}.relate.sample0.anc",
+        muts=f"{OUTPUT_DIR}/{{uid}}.relate.sample0.mut",
     params:
-        map=lambda wc: params[wc.uid]["recomb_map"],
         mu=lambda wc: to_float(params[wc.uid].get("mu", MU_DEFAULT), MU_DEFAULT),
         Ne=NE,
+        prefix=lambda wc: f"{wc.uid}.relate",
+        working_dir = OUTPUT_DIR
+    container:
+        config.get("singularity")
+    shell:
+        r"""
+        set -euo pipefail
+        cd "{params.working_dir}"
+        
+        Relate --mode All \
+          -m "{params.mu}" \
+          -N "{params.Ne}" \
+          --haps {input.haps} \
+          --sample {input.sample} \
+          --map {input.map_file} \
+          -o "{params.prefix}.sample0"
+        """
+
+# Run MCMC branch resampling
+rule run_relate_mcmc:
+    input:
+        haps=f"{OUTPUT_DIR}/{{uid}}.haps",
+        sample=f"{OUTPUT_DIR}/{{uid}}.sample",
+        anc=f"{OUTPUT_DIR}/{{uid}}.relate.sample0.anc",
+        muts=f"{OUTPUT_DIR}/{{uid}}.relate.sample0.mut",
+        map_file=f"{OUTPUT_DIR}/{{uid}}.hapmap.processed.relate"
+    output:
+        trees=f"{OUTPUT_DIR}/{{uid}}.relate.sample{ITER_END}.trees",
+    params:
+        mu=lambda wc: to_float(params[wc.uid].get("mu", MU_DEFAULT), MU_DEFAULT),
+        Ne=NE,
+        prefix=lambda wc: f"{wc.uid}.relate",
         iter_start=ITER_START,
         iter_end=ITER_END,
         thin_every=THIN_EVERY,
-        prefix=lambda wc: f"{OUTPUT_DIR}/{wc.uid}.relate",
+        working_dir = OUTPUT_DIR
     container:
         config.get("singularity")
     shell:
         r"""
         set -euo pipefail
 
+        cd "{params.working_dir}"
+
         PREFIX="{params.prefix}"
         ITER_START="{params.iter_start}"
         ITER_END="{params.iter_end}"
         MU="{params.mu}"
         NE="{params.Ne}"
-        MAP="{params.map}"
+        MAP="{input.map_file}"
         THIN_EVERY="{params.thin_every}"
 
-        Relate --mode All \
-          -m "${MU}" \
-          -N "${NE}" \
-          --haps {input.haps} \
-          --sample {input.sample} \
-          --map "${MAP}" \
-          -o "${PREFIX}.sample${ITER_START}"
-
-        for i in $(seq "${ITER_START}" "${ITER_END}"); do
+        for i in $(seq "${{ITER_START}}" "${{ITER_END}}"); do
+          
           /opt/relate/relate_lib/bin/Convert --mode ConvertToTreeSequence \
-            --anc "${PREFIX}.sample${i}.anc" \
-            --mut "${PREFIX}.sample${i}.mut" \
-            -o "${PREFIX}.sample${i}"
+            --anc "${{PREFIX}}.sample${{i}}.anc" \
+            --mut "${{PREFIX}}.sample${{i}}.mut" \
+            -o "${{PREFIX}}.sample${{i}}"
 
           RelateCoalescentRate --mode EstimatePopulationSize \
-            -i "${PREFIX}.sample${i}" \
-            -o "${PREFIX}.sample${i}"
+            -i "${{PREFIX}}.sample${{i}}" \
+            -o "${{PREFIX}}.sample${{i}}"
 
           RelateMutationRate --mode Avg \
-            -i "${PREFIX}.sample${i}" \
-            -o "${PREFIX}.sample${i}"
+            -i "${{PREFIX}}.sample${{i}}" \
+            -o "${{PREFIX}}.sample${{i}}"
 
           RelateCoalescentRate --mode ReEstimateBranchLengths \
-            -i "${PREFIX}.sample${i}" \
-            --mrate "${PREFIX}.sample${i}_avg.rate" \
-            -m "${MU}" \
-            --coal "${PREFIX}.sample${i}.coal" \
-            -o "${PREFIX}.sample$((i+1))"
+            -i "${{PREFIX}}.sample${{i}}" \
+            --mrate "${{PREFIX}}.sample${{i}}_avg.rate" \
+            -m "${{MU}}" \
+            --coal "${{PREFIX}}.sample${{i}}.coal" \
+            -o "${{PREFIX}}.sample$((i+1))"
 
           # Remove auxiliary files every iteration
           rm -f \
-            "${PREFIX}.sample${i}_avg.rate" \
-            "${PREFIX}.sample${i}.coal" \
-            "${PREFIX}.sample${i}.popsize" \
-            "${PREFIX}.sample${i}.mutrate" \
-            "${PREFIX}.sample${i}.bin"
+            "${{PREFIX}}.sample${{i}}_avg.rate" \
+            "${{PREFIX}}.sample${{i}}.coal" \
+            "${{PREFIX}}.sample${{i}}.popsize" \
+            "${{PREFIX}}.sample${{i}}.mutrate" \
+            "${{PREFIX}}.sample${{i}}.bin"
 
-          # Thin heavy outputs unless zero, divisible by THIN_EVERY, or final iteration
+          # Thin heavy outputs
           keep_iter="false"
-          if [ "${i}" -eq 0 ]; then
+          if [ "${{i}}" -eq 0 ]; then
             keep_iter="true"
-          elif [ "${THIN_EVERY}" -gt 0 ] && [ $(( i % THIN_EVERY )) -eq 0 ]; then
+          elif [ "${{THIN_EVERY}}" -gt 0 ] && [ $(( i % THIN_EVERY )) -eq 0 ]; then
             keep_iter="true"
-          elif [ "${i}" -eq "${ITER_END}" ]; then
+          elif [ "${{i}}" -eq "${{ITER_END}}" ]; then
             keep_iter="true"
-          elif [ "${THIN_EVERY}" -le 0 ]; then
+          elif [ "${{THIN_EVERY}}" -le 0 ]; then
             keep_iter="true"
           fi
 
-          if [ "${keep_iter}" != "true" ]; then
+          if [ "${{keep_iter}}" != "true" ]; then
             rm -f \
-              "${PREFIX}.sample${i}.trees" \
-              "${PREFIX}.sample${i}.anc" \
-              "${PREFIX}.sample${i}.mut"
+              "${{PREFIX}}.sample${{i}}.trees" \
+              "${{PREFIX}}.sample${{i}}.anc" \
+              "${{PREFIX}}.sample${{i}}.mut"
           fi
         done
+        """
