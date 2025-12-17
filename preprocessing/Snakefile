@@ -2,7 +2,6 @@
 # Load the configuration file
 
 configfile: "config.yaml"
-container: config.get("singularity")
 
 import os
 import glob
@@ -50,6 +49,7 @@ rule normalize_vcf:
         vcf = lambda wc: VCF_MAP[wc.vcf]
     output:
         normalized_vcf = temp("{output_dir}/{vcf}.no_multiallelics.vcf.gz")
+    container: config.get("singularity")
     shell:
         """
         bcftools norm -m - {input.vcf} -Ou \
@@ -67,6 +67,7 @@ rule calculate_frequency:
     params:
         out_base = "{output_dir}/{vcf}.no_multiallelics"
     threads: 1
+    container: config.get("singularity")
     shell:
         """
         plink2 --vcf {input.normalized_vcf} \
@@ -87,6 +88,7 @@ rule pick_variants:
         add_chr = config.get("add_chr", True)
     output:
         var_incl_list = "{output_dir}/{vcf}.no_multiallelics.var_incl.list"
+    container: config.get("singularity")
     shell:
         """
         python {params.script_path} \
@@ -105,6 +107,7 @@ rule final_filtering:
     params:
         out_base = "{output_dir}/{vcf}.no_multiallelics.filtered"
     threads: 1
+    container: config.get("singularity")
     shell:
         """
         plink2 --vcf {input.vcf_file} \

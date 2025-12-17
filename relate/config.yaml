@@ -7,13 +7,12 @@ singularity: "../shared/container/arg_inference_tools.sif"
 output_dir: "/grid/siepel/home/khalid/argsortium-outputs/2025_11_27/inferred_args/relate"
 
 # Params CSV (one row per region)
-#params_file: "/grid/siepel/home/khalid/argsortium-outputs/2025_11_27/HomSap_OutOfAfrica_3G09/YRI_0_CEU_0_CHB_15/2025_11_27_YRI_0_CEU_0_CHB_15_params_file.csv"
-params_file: "/grid/siepel/home/khalid/argsortium-inference/relate/temp.csv"
+params_file: "/grid/siepel/home/khalid/argsortium-outputs/2025_11_27/HomSap_OutOfAfrica_3G09/YRI_0_CEU_0_CHB_15/2025_11_27_YRI_0_CEU_0_CHB_15_params_file.csv"
 
 # Config-level defaults (applied to all rows)
 Ne: 40000 #In relate the Ne needs to be number of chroms not individuals (So Ne*2)
 iter_start: 0
-iter_end: 500
+iter_end: 800
 thin_every: 20  # 0 disables thinning; otherwise keep only iterations divisible by this value (plus 0 and iter_end)
 
 # Optional: threads (not currently used by Relate commands)

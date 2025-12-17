@@ -11,3 +11,4 @@ notebooks/
 .venv/
 .ipynb_checkpoints/
 .bash_history
+myconfigs
