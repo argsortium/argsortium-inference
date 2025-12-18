@@ -1,0 +1,101 @@
+# Snakefile for THReaD-S
+configfile: "config.yaml"
+
+import csv
+
+params = {}
+uids = []
+
+with open(config["params_file"]) as f:
+    reader = csv.DictReader(f)
+    for row in reader:
+        uid = row["uid"]
+        params[uid] = row
+        uids.append(uid)
+
+
+OUTPUT_DIR = config["output_dir"]
+THREADS = config.get("threads", 20)
+DEMOGRAPHY_FILE = config["demography_file"]
+
+
+rule all:
+    input: [f"{OUTPUT_DIR}/{uid}.threads.trees" for uid in uids]
+
+
+rule prepare_inputs:
+    input:
+        vcf=lambda wc: params[wc.uid]["vcf_file"],
+        map_file=lambda wc: params[wc.uid]["recomb_map"]
+    output:
+        pgen=f"{OUTPUT_DIR}/{{uid}}.pgen",
+        fam=f"{OUTPUT_DIR}/{{uid}}.fam",
+        bim=f"{OUTPUT_DIR}/{{uid}}.bim",
+        processed_map=temp(f"{OUTPUT_DIR}/{{uid}}.threads.map")
+    params:
+        outbase=lambda wc: f"{OUTPUT_DIR}/{wc.uid}",
+        threads=THREADS
+    container: config.get("singularity")
+    shell:
+        """
+        plink2 \
+          --vcf {input.vcf} \
+          --make-bpgen \
+          --threads {params.threads} \
+          --out {params.outbase} \
+          --mac 1
+
+        awk 'NR == 1 {{print "chr\tpos\trate\tcM"; next}} {{print $0}}' {input.map_file} > {output.processed_map}
+        """
+
+
+rule threads_infer:
+    input:
+        pgen=f"{OUTPUT_DIR}/{{uid}}.pgen",
+        map_file=f"{OUTPUT_DIR}/{{uid}}.threads.map"
+    output:
+        threads_file=f"{OUTPUT_DIR}/{{uid}}.threads"
+    params:
+        out_prefix=lambda wc: f"{OUTPUT_DIR}/{wc.uid}.threads",
+        demography=DEMOGRAPHY_FILE,
+        num_threads=THREADS
+    container: config.get("singularity")
+    shell:
+        """
+        threads infer \
+          --pgen {input.pgen} \
+          --map {input.map_file} \
+          --demography {params.demography} \
+          --out {params.out_prefix} \
+          --fit_to_data \
+          --num_threads {params.num_threads}
+        """
+
+rule threads_convert:
+    input:
+        threads_file=f"{OUTPUT_DIR}/{{uid}}.threads"
+    output:
+        argn=f"{OUTPUT_DIR}/{{uid}}.threads.argn"
+    params:
+        out_prefix=lambda wc: f"{OUTPUT_DIR}/{wc.uid}.threads"
+    container: config.get("singularity")
+    shell:
+        """
+        threads convert \
+          --threads {input.threads_file} \
+          --argn {output.argn} \
+          --add_mutations
+        """
+
+rule argn_to_trees:
+    input:
+        argn=f"{OUTPUT_DIR}/{{uid}}.threads.argn"
+    output:
+        trees=f"{OUTPUT_DIR}/{{uid}}.threads.trees"
+    params:
+        script_path="argneedle/scripts/argn_to_tskit.py"
+    container: config.get("singularity")
+    shell:
+        """
+        python {params.script_path} {input.argn}
+        """

@@ -6,11 +6,13 @@ Snakemake workflows for ARG inference and preprocessing. Each inference pipeline
 - [Preprocessing](#preprocessing-workflow)
 - [Singer](#singer-workflow)
 - [Relate](#relate-workflow-branch-resampling)
+- [Threads](#threads-workflow)
 - [tsinfer](#tsinfer--tsdate-workflow)
 - [Other tools / In Dev](#other-tools--in-dev)
 
 ## Repository layout
 - `preprocessing/` – VCF cleanup (normalize, frequency calc, variant picking) before inference.
+- `threads/` – Snakemake pipeline for THReaD-S (VCF→bpgen, recomb-map header fix, infer+convert to .trees).
 - `tsinfer/` – Snakemake pipeline for tsinfer + tsdate (`scripts/run_tsinfer.py`).
 - `singer/` – Snakemake pipeline wrapping Singer and conversion to tskit.
 - `relate/` – Snakemake pipeline for Relate with branch resampling plus helper scripts.
@@ -24,6 +26,10 @@ preprocessing/
 |- config.yaml
 `- scripts/
    `- variant_selector.py
+
+threads/
+|- Snakefile
+`- config.yaml
 
 singer/
 |- Snakefile
@@ -84,6 +90,22 @@ Run (use `uv` to respect the pinned Snakemake version):
 uv run snakemake -s preprocessing/Snakefile --configfile preprocessing/config.yaml --use-singularity --singularity-args '--bind /path:/path' --cores 4
 ```
 Outputs: `{output_dir}/{sample}.no_multiallelics.filtered.vcf.gz` plus frequency and inclusion list files.
+
+## Threads workflow
+Converts VCFs to bpgen, fixes recombination map headers, runs `threads infer`, converts to `.argn` with `threads convert`, then uses `argneedle/scripts/argn_to_tskit.py` to produce the final `.trees`.
+
+Key config (`threads/config.yaml`):
+- `params_file`: path to params CSV (needs `uid`, `vcf_file`, `recomb_map`).
+- `output_dir`: destination for bpgen/map intermediates and `{uid}.threads.trees`.
+- `demography_file`: demo file used by THReaD-S (e.g., `Ne10000.demo`).
+- `threads`: number of threads for plink2 and THReaD-S.
+- `singularity`: container path.
+
+Run (via `uv`):
+```bash
+uv run snakemake -s threads/Snakefile --configfile threads/config.yaml --use-singularity --singularity-args '--bind /path:/path' --cores 8
+```
+Outputs: `{output_dir}/{uid}.pgen`, header-fixed `{uid}.threads.map`, `{uid}.threads.argn`, and final `{output_dir}/{uid}.threads.trees`.
 
 ## tsinfer + tsdate workflow
 Two rules: convert each VCF to Zarr with `vcf2zarr`, then run `scripts/run_tsinfer.py` to infer and date the tree sequence.

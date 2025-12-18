@@ -148,6 +148,7 @@ From: continuumio/miniconda3:23.5.2-0
     #ArgNeedle + Threads
     #######################################################
     /opt/conda/bin/python -m pip install --no-cache-dir arg-needle
+    /opt/conda/bin/python -m pip install --no-cache-dir arg-needle
     /opt/conda/bin/python -m pip install --no-cache-dir threads_arg
 
     #######################################################

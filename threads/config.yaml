@@ -1,0 +1,16 @@
+# config.yaml for THReaD-S inference workflow
+
+# Singularity image path
+singularity: "../shared/container/arg_inference_tools.sif"
+
+# Outputs will be written here
+output_dir: "/grid/siepel/home/khalid/argsortium-outputs/2025_11_27/inferred_args/threads"
+
+# Params CSV (one row per region)
+params_file: "/grid/siepel/home/khalid/argsortium-outputs/2025_11_27/HomSap_OutOfAfrica_3G09/YRI_0_CEU_0_CHB_15/2025_11_27_YRI_0_CEU_0_CHB_15_params_file.csv"
+
+# Demography file (e.g., Ne10000.demo)
+demography_file: "/grid/siepel/home/khalid/argsortium-inference/demography/Ne10000.demo"
+
+# Number of threads to use for plink2 and threads
+threads: 10
