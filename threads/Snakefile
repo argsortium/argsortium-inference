@@ -68,7 +68,6 @@ rule threads_infer:
           --demography {params.demography} \
           --out {params.out_prefix} \
           --fit_to_data \
-          --num_threads {params.num_threads}
         """
 
 rule threads_convert:
@@ -93,7 +92,7 @@ rule argn_to_trees:
     output:
         trees=f"{OUTPUT_DIR}/{{uid}}.threads.trees"
     params:
-        script_path="argneedle/scripts/argn_to_tskit.py"
+        script_path="../argneedle/scripts/argn_to_tskit.py"
     container: config.get("singularity")
     shell:
         """
