@@ -84,12 +84,12 @@ rule convert_to_tskit:
     output:
         trees=f"{OUTPUT_DIR}/{{uid}}.singer.tskit_{FINAL_TSKIT_FILE}.trees"
     params:
-				input=f"{OUTPUT_DIR}/{{uid}}.singer",
-				output=f"{OUTPUT_DIR}/{{uid}}.singer.tskit",
-				start=0,
-				end=N,
-				step=step_size,
+        input=f"{OUTPUT_DIR}/{{uid}}.singer",
+        output=f"{OUTPUT_DIR}/{{uid}}.singer.tskit",
+        start=0,
+        end=N,
+        step=step_size,
     container:
         config.get("singularity")
-		script:
-				"scripts/convert_to_tskit_v1.py"
+    script:
+        "scripts/convert_to_tskit_v1.py"
