@@ -90,7 +90,7 @@ def main():
 
     # Date with tsdate
     inferred_ts_w_dates = tsdate.date(
-        inferred_ts.simplify(),
+        inferred_ts,
         mutation_rate=args.mut_rate,
         progress=True
     )
