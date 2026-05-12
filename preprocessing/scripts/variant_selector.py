@@ -14,7 +14,8 @@ def main():
     
     parser.add_argument("allele_freq_file", help="Path to the input allele frequency file (PLINK2 .afreq format).")
     parser.add_argument("outfile", help="Path to the output file (list of variant IDs to include).")
-    parser.add_argument("--add_chr", default = True, help = "add 'chr' before the variant ID")
+    parser.add_argument("--add_chr", default=True, type=lambda x: x.lower() == 'true',
+                        help="add 'chr' before the variant ID")
     parser.add_argument("--exclusion_list", default="_NA",
                         help="Path to a file containing variant IDs to exclude (one ID per line). Default: _NA (no exclusion)."
     )

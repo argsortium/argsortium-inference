@@ -5,6 +5,7 @@ logfile
 #folders to ignore
 results/
 notebooks/
+logs/
 
 #hidden folders to ignore
 .snakemake/

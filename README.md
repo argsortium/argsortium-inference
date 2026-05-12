@@ -18,12 +18,12 @@ Snakemake workflows for ARG inference and preprocessing. Each inference pipeline
 - `relate/` – Snakemake pipeline for Relate with branch resampling plus helper scripts.
 - `argweaver/`, `argneedle/` – helper scripts (conversion, format prep) not yet wired into Snakemake.
 - `shared/container/arg_inference_tools.def|.sif` – Singularity recipe/image with toolchain (htslib/bgzip, bcftools, plink2, argweaver, Singer, Relate, Python deps).
-- `pyproject.toml` – pins Snakemake (`>=3.12` Python).
+- `pyproject.toml` – pins Snakemake 9.14.1 (Python 3.12+); managed via `uv`.
 
 ```
 preprocessing/
 |- Snakefile
-|- config.yaml
+|- config.yaml          # default/example config
 `- scripts/
    `- variant_selector.py
 
@@ -56,7 +56,7 @@ tsinfer/
   ```bash
   singularity build shared/container/arg_inference_tools.sif shared/container/arg_inference_tools.def
   ```
-- Python 3.12+; Snakemake version is pinned via `uv` in this repo (`pyproject.toml`).
+- Python 3.12+; Snakemake 9.14.1 is pinned via `uv` (`pyproject.toml`). Install dependencies with `uv sync`.
 - Input data: gzipped, phased VCFs for inference workflows; reference FASTA, recombination maps, and params CSV as described below.
 
 ## Params CSV schema (shared across workflows)
@@ -81,14 +81,21 @@ Normalizes VCFs, computes frequencies, selects one biallelic variant per positio
 Key config (`preprocessing/config.yaml`):
 - `vcf_pattern`: glob for input VCFs.
 - `output_dir`: where cleaned files are written.
-- `add_chr`: whether to prefix `chr` in variant IDs when writing inclusion lists.
+- `add_chr`: set `True` if the input VCFs have a `chr` prefix in the CHROM field (plink2 strips it; this re-adds it to variant IDs). tskit-generated VCFs use bare chromosome numbers, so set `False` for those.
 - `exclusion_list`: optional file with variants (`chr:pos:ref:alt`, one per line) to filter out for QC/MAF concerns.
-- `singularity`: path to the container image.
+- `singularity`: path to the container image (relative to the `preprocessing/` directory).
 
-Run (use `uv` to respect the pinned Snakemake version):
+Run from inside the `preprocessing/` directory (use `uv` to respect the pinned Snakemake version):
 ```bash
-uv run snakemake -s preprocessing/Snakefile --configfile preprocessing/config.yaml --use-singularity --singularity-args '--bind /path:/path' --cores 4
+cd preprocessing/
+uv run snakemake --snakefile Snakefile \
+    --configfile config.yaml \
+    --cores 8 \
+    --use-apptainer \
+    --apptainer-args "--bind /grid"
 ```
+The `--apptainer-args "--bind /grid"` flag is required on this cluster because the GPFS `/grid` filesystem is not auto-bound in Singularity on all compute nodes.
+
 Outputs: `{output_dir}/{sample}.no_multiallelics.filtered.vcf.gz` plus frequency and inclusion list files.
 
 ## Threads workflow
@@ -103,7 +110,7 @@ Key config (`threads/config.yaml`):
 
 Run (via `uv`):
 ```bash
-uv run snakemake -s threads/Snakefile --configfile threads/config.yaml --use-singularity --singularity-args '--bind /path:/path' --cores 8
+uv run snakemake -s threads/Snakefile --configfile threads/config.yaml --use-apptainer --apptainer-args "--bind /grid" --cores 8
 ```
 Outputs: `{output_dir}/{uid}.pgen`, header-fixed `{uid}.threads.map`, `{uid}.threads.argn`, and final `{output_dir}/{uid}.threads.trees`.
 
@@ -118,7 +125,7 @@ Key config (`tsinfer/config.yaml`):
 
 Run (via `uv`):
 ```bash
-uv run snakemake -s tsinfer/Snakefile --configfile tsinfer/config.yaml --use-singularity --singularity-args '--bind /path:/path' --cores 8
+uv run snakemake -s tsinfer/Snakefile --configfile tsinfer/config.yaml --use-apptainer --apptainer-args "--bind /grid" --cores 8
 ```
 Outputs: `{output_dir}/{uid}.vcz` and `{output_dir}/{uid}.tsinfer.trees`.
 
@@ -134,7 +141,7 @@ Key config (`singer/config.yaml`):
 
 Run (via `uv`):
 ```bash
-uv run snakemake -s singer/Snakefile --configfile singer/config.yaml --use-singularity --singularity-args '--bind /path:/path' --cores 8
+uv run snakemake -s singer/Snakefile --configfile singer/config.yaml --use-apptainer --apptainer-args "--bind /grid" --cores 8
 ```
 Outputs: Singer text outputs and `{output_dir}/{uid}.singer.tskit_<iter>.trees`.
 
@@ -150,7 +157,7 @@ Key config (`relate/config.yaml`):
 
 Run (via `uv`):
 ```bash
-uv run snakemake -s relate/Snakefile --configfile relate/config.yaml --use-singularity --singularity-args '--bind /path:/path' --cores 8
+uv run snakemake -s relate/Snakefile --configfile relate/config.yaml --use-apptainer --apptainer-args "--bind /grid" --cores 8
 ```
 Outputs: `{output_dir}/{uid}.haps`, `{uid}.sample`, Relate anc/mut and resampled files, and final `{output_dir}/{uid}.relate.sample{iter_end}.trees`.
 
@@ -165,3 +172,5 @@ ArgWeaver and ArgNeedle scripts are provided as references and are not yet wired
 - All workflows expect bgzipped VCFs; preprocessing will normalize IDs and ensure biallelic variants.
 - Set `output_dir` in each config to keep outputs separate per tool/run.
 - Use `--cores` to parallelize across `uid` values from the params CSV.
+- Always pass `--use-apptainer --apptainer-args "--bind /grid"` when running on this cluster. The GPFS `/grid` mount is not auto-bound inside Singularity on all compute nodes, so omitting `--bind /grid` causes silent "file not found" failures from tools inside the container.
+- Snakemake 9 uses `--use-apptainer` (not `--use-singularity`) and `--apptainer-args` (not `--singularity-args`).
