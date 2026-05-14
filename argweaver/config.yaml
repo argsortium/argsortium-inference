@@ -1,0 +1,18 @@
+# config.yaml
+
+singularity: "/grid/siepel/home/khalid/argsortium-inference/shared/container/arg_inference_tools.sif"
+output_dir: ""
+params_pattern: ""   # glob matching per-simulation *.params.csv files
+
+# Region overrides (optional — applied to all UIDs)
+# start:
+# end:
+max_contig_length:    # bp; omit or leave blank to run whole region as one job
+
+# Model parameters
+Ne: 10000
+recomb_rate: 1.2e-8
+mcmc_samples: 4000
+compression: 20
+n_time_points: 20
+sample_step: 20

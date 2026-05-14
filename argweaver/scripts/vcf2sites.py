@@ -1,70 +1,74 @@
 #!/usr/bin/env python3
 
 import sys
+import gzip
 import argparse
-from cyvcf2 import VCF
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Convert a phased VCF to a .sites file format."
     )
-    parser.add_argument(
-        "--vcf", required=True, help="Input phased VCF file."
-    )
-    parser.add_argument(
-        "--out", required=True, help="Output sites file name."
-    )
+    parser.add_argument("--vcf", required=True, help="Input phased VCF file.")
+    parser.add_argument("--out", required=True, help="Output sites file name.")
     return parser.parse_args()
+
+
+def open_vcf(path):
+    return gzip.open(path, "rt") if path.endswith(".gz") else open(path)
 
 
 def main():
     args = parse_args()
-    vcf_file = args.vcf
-    output_file = args.out
 
-    # Read VCF
-    vcf = VCF(vcf_file)
-
-    # Get region info (first contig + min/max POS)
+    samples = []
     chrom = None
     positions = []
-    for variant in vcf:
-        if chrom is None:
-            chrom = variant.CHROM
-        positions.append(variant.POS)
+    data = []
+
+    with open_vcf(args.vcf) as f:
+        for line in f:
+            if line.startswith("##"):
+                continue
+            if line.startswith("#CHROM"):
+                samples = line.strip().split("\t")[9:]
+                continue
+            fields = line.strip().split("\t")
+            chrom = fields[0]
+            pos = int(fields[1])
+            ref = fields[3]
+            alt = fields[4].split(",")[0]
+            alleles = [ref, alt]
+
+            fmt = fields[8].split(":")
+            gt_idx = fmt.index("GT")
+
+            bases = []
+            for sample_field in fields[9:]:
+                gt = sample_field.split(":")[gt_idx]
+                a1, a2 = gt.split("|")
+                if a1 not in ("0", "1") or a2 not in ("0", "1"):
+                    raise ValueError(
+                        f"Multi-allelic genotype at {chrom}:{pos} — "
+                        f"GT={gt}. Run bcftools norm -m - first."
+                    )
+                bases.append(alleles[int(a1)])
+                bases.append(alleles[int(a2)])
+
+            positions.append(pos)
+            data.append((pos, "".join(bases)))
+
+    hap_names = [f"{s}_{i}" for s in samples for i in range(2)]
     region = [chrom, str(min(positions)), str(max(positions))]
 
-    # Get samples
-    samples = vcf.samples
-    num_samples = len(samples)
-
-    # Hap names: diploid individuals → two haplotypes each
-    hap_names = [f"{name}_{i}" for name in samples for i in range(2)]
-
-    # Extract haplotype sequences
-    vcf = VCF(vcf_file)  # re-open to iterate again
-    data = []
-    for variant in vcf:
-        pos = variant.POS
-        phased = [gt[:2] for gt in variant.genotypes]
-        hap1 = [variant.REF, variant.ALT[0]]
-        bases = []
-        for gt in phased:
-            bases.append(hap1[gt[0]])
-            bases.append(hap1[gt[1]])
-        data.append([pos, "".join(bases)])
-
-    # Write sites file
-    with open(output_file, "w") as f:
+    with open(args.out, "w") as f:
         f.write("NAMES\t{}\n".format("\t".join(hap_names)))
         f.write("REGION\t{}\n".format("\t".join(region)))
-        for row in data:
-            f.write("{}\t{}\n".format(row[0], row[1]))
+        for pos, bases in data:
+            f.write(f"{pos}\t{bases}\n")
 
-    print(f"Wrote {output_file}")
+    print(f"Wrote {args.out}")
 
 
 if __name__ == "__main__":
     main()
-
