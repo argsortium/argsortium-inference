@@ -7,6 +7,8 @@ SEAWULF_CONTEXT.md
 results/
 notebooks/
 logs/
+slurm/
+myconfigs/
 
 #hidden folders to ignore
 .snakemake/
@@ -14,4 +16,4 @@ logs/
 .venv/
 .ipynb_checkpoints/
 .bash_history
-myconfigs
+
