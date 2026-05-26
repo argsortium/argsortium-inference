@@ -1,66 +1,71 @@
 configfile: f"{workflow.basedir}/config.yaml"
 
 import csv
-import glob
-import itertools
 import os
 
 params = {}
 uids = []
 
-_patterns = config["params_pattern"]
-if isinstance(_patterns, str):
-    _patterns = [_patterns]
-for csv_path in sorted(itertools.chain.from_iterable(glob.glob(p) for p in _patterns)):
-    with open(csv_path) as f:
-        row = next(csv.DictReader(f))
-    uid = os.path.basename(row["vcf_file"]).replace(".no_multiallelics.filtered.vcf.gz", "")
-    params[uid] = row
-    uids.append(uid)
+with open(config["params_csv"]) as f:
+    for row in csv.DictReader(f):
+        uid = row["uid"]
+        params[uid] = row
+        uids.append(uid)
 
-OUTPUT_DIR = config["output_dir"]
-REG_START = int(config["start"])
-REG_END = int(config["end"])
-
-N = config.get("mcmc_samples")
+N = config.get("mcmc_samples", 2000)
 FINAL_ITER = N - 1
-step_size = config.get("step_size", 5)
+step_size = config.get("step_size", 10)
 FINAL_TSKIT_FILE = range(0, N, step_size)[-1]
 
+wildcard_constraints:
+    uid    = r"[^/]+", # uid stays as-is: never crosses a directory boundary
+    outdir = r".+" # outdir CAN contain slashes — matches the full directory path
+
 rule all:
-    input: expand(f"{OUTPUT_DIR}/{{uid}}.singer.tskit_{FINAL_TSKIT_FILE}.trees", uid=uids)
+    input:
+        [f"{params[uid]['output_dir']}/{uid}/{uid}.singer.tskit_{FINAL_TSKIT_FILE}.trees"
+         for uid in uids]
 
 rule unzip_vcf:
     input:
         vcf = lambda wc: params[wc.uid]["vcf_file"]
     output:
-        vcf = temp(f"{OUTPUT_DIR}/{{uid}}.vcf")
+        vcf = temp("{outdir}/{uid}/{uid}.vcf")
+    params:
+        chrom = lambda wc: os.path.basename(params[wc.uid]["vcf_file"]).split("_")[0],
+        start = lambda wc: params[wc.uid]["inference_start"],
+        end   = lambda wc: params[wc.uid]["inference_end"],
     container: config.get("singularity")
     shell:
         """
-        bgzip -d {input.vcf} -o {output.vcf}
+        bgzip -d -c {input.vcf} \
+            | awk -v s={params.start} -v e={params.end} '/^#/ || ($2 >= s && $2 <= e)' \
+            > {output.vcf}
         """
 
 rule run_singer:
     input:
-        vcf = f"{OUTPUT_DIR}/{{uid}}.vcf"
+        vcf = "{outdir}/{uid}/{uid}.vcf"
     output:
-        recombs  = f"{OUTPUT_DIR}/{{uid}}.singer_recombs_{FINAL_ITER}.txt",
-        muts     = f"{OUTPUT_DIR}/{{uid}}.singer_muts_{FINAL_ITER}.txt",
-        nodes    = f"{OUTPUT_DIR}/{{uid}}.singer_nodes_{FINAL_ITER}.txt",
-        branches = f"{OUTPUT_DIR}/{{uid}}.singer_branches_{FINAL_ITER}.txt",
+        recombs  = f"{{outdir}}/{{uid}}/{{uid}}.singer_recombs_{FINAL_ITER}.txt",
+        muts     = f"{{outdir}}/{{uid}}/{{uid}}.singer_muts_{FINAL_ITER}.txt",
+        nodes    = f"{{outdir}}/{{uid}}/{{uid}}.singer_nodes_{FINAL_ITER}.txt",
+        branches = f"{{outdir}}/{{uid}}/{{uid}}.singer_branches_{FINAL_ITER}.txt",
     params:
         Ne         = config.get("Ne", 20000),
         mu         = lambda wc: params[wc.uid]["mu"],
         polar      = config.get("polar", 0.99),
         recomb_map = lambda wc: params[wc.uid]["recomb_map"],
-        out_prefix = lambda wc: f"{OUTPUT_DIR}/{wc.uid}.singer",
-        vcf_base   = lambda wc: f"{OUTPUT_DIR}/{wc.uid}",
+        out_prefix = "{outdir}/{uid}/{uid}.singer",
+        vcf_base   = "{outdir}/{uid}/{uid}",
+        start      = lambda wc: params[wc.uid]["inference_start"],
+        end        = lambda wc: params[wc.uid]["inference_end"],
     container: config.get("singularity")
     shell:
         """
         RESUME_FLAG=""
-        if compgen -G "{params.out_prefix}_recombs_*.txt" > /dev/null 2>&1; then
+        if compgen -G "{params.out_prefix}_recombs_*.txt" > /dev/null 2>&1 && \
+           compgen -G "{params.out_prefix}_nodes_*.txt"   > /dev/null 2>&1; then
             RESUME_FLAG="-resume"
         fi
 
@@ -68,25 +73,28 @@ rule run_singer:
           -Ne {params.Ne} \
           -m {params.mu} \
           -recomb_map {params.recomb_map} \
-          -start {REG_START} \
-          -end {REG_END} \
+          -start {params.start} \
+          -end {params.end} \
           -n {N} \
           -polar {params.polar} \
           $RESUME_FLAG \
           -output {params.out_prefix} \
-          -vcf {params.vcf_base}
+          -vcf {params.vcf_base} \
+          -thin {step_size}
         """
 
 rule convert_to_tskit:
     input:
-        recombs  = f"{OUTPUT_DIR}/{{uid}}.singer_recombs_{FINAL_ITER}.txt",
-        muts     = f"{OUTPUT_DIR}/{{uid}}.singer_muts_{FINAL_ITER}.txt",
-        nodes    = f"{OUTPUT_DIR}/{{uid}}.singer_nodes_{FINAL_ITER}.txt",
-        branches = f"{OUTPUT_DIR}/{{uid}}.singer_branches_{FINAL_ITER}.txt",
+        recombs  = f"{{outdir}}/{{uid}}/{{uid}}.singer_recombs_{FINAL_ITER}.txt",
+        muts     = f"{{outdir}}/{{uid}}/{{uid}}.singer_muts_{FINAL_ITER}.txt",
+        nodes    = f"{{outdir}}/{{uid}}/{{uid}}.singer_nodes_{FINAL_ITER}.txt",
+        branches = f"{{outdir}}/{{uid}}/{{uid}}.singer_branches_{FINAL_ITER}.txt",
     output:
-        trees = f"{OUTPUT_DIR}/{{uid}}.singer.tskit_{FINAL_TSKIT_FILE}.trees"
+        trees = f"{{outdir}}/{{uid}}/{{uid}}.singer.tskit_{FINAL_TSKIT_FILE}.trees"
     params:
-        prefix = f"{OUTPUT_DIR}/{{uid}}.singer"
+        prefix = "{outdir}/{uid}/{uid}.singer",
+        N      = N,
+        step   = step_size,
     container: config.get("singularity")
     shell:
         """
@@ -94,6 +102,6 @@ rule convert_to_tskit:
           -input {params.prefix} \
           -output {params.prefix}.tskit \
           -start 0 \
-          -end {N} \
-          -step {step_size}
+          -end {params.N} \
+          -step {params.step}
         """

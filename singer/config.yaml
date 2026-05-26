@@ -1,14 +1,8 @@
-# config.yaml
+singularity: "/gpfs/home/shkhalid/SiepelVeeramahSharedDrive/argsortium-inference/shared/container/arg_inference_tools.sif"
+params_csv: "/gpfs/projects/SiepelVeeramahGroup/shkhalid/argsortium-inference/singer/myconfigs/2026_05_11_runs/master_params.csv"
 
-#container
-singularity: "/grid/siepel/home/khalid/argsortium-inference/shared/container/arg_inference_tools.sif"
-# Define the path where all output files should be placed, if empty will be placed in the same folder as input_vcf
-output_dir: "/grid/siepel/home/khalid/argsortium-outputs/2025_11_27/inferred_args/singer/YRI_0_CEU_0_CHB_15"
-
-params_file: "/grid/siepel/home/khalid/argsortium-outputs/2025_11_27/HomSap_OutOfAfrica_3G09/YRI_0_CEU_0_CHB_15/2025_11_27_YRI_0_CEU_0_CHB_15_params_file.csv"
-
-mcmc_samples : 1000
-step_size: 10
 Ne: 20000
-polar: 0.99 #set to 0.99 for polarized data
-
+mcmc_samples: 2000
+step_size: 20
+thin: 20
+polar: 0.99
