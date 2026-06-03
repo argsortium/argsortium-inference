@@ -1,13 +1,7 @@
 # config.yaml
 
 singularity: "/grid/siepel/home/khalid/argsortium-inference/shared/container/arg_inference_tools.sif"
-output_dir: ""
-params_pattern: ""   # glob matching per-simulation *.params.csv files
-
-# Region overrides (optional — applied to all UIDs)
-# start:
-# end:
-max_contig_length:    # bp; omit or leave blank to run whole region as one job
+params_csv: "/grid/siepel/home/khalid/argsortium-inference/argweaver/myconfigs/2026_05_11_runs/master_params.csv"
 
 # Model parameters
 Ne: 10000

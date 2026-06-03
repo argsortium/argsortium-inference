@@ -1,66 +1,64 @@
 configfile: f"{workflow.basedir}/config.yaml"
 
 import csv
-import glob
-import itertools
 import os
 
 params = {}
 uids = []
 
-_patterns = config["params_pattern"]
-if isinstance(_patterns, str):
-    _patterns = [_patterns]
-for csv_path in sorted(itertools.chain.from_iterable(glob.glob(p) for p in _patterns)):
-    with open(csv_path) as f:
-        row = next(csv.DictReader(f))
-    uid = os.path.basename(row["vcf_file"]).replace(".no_multiallelics.filtered.vcf.gz", "")
-    params[uid] = row
-    uids.append(uid)
+with open(config["params_csv"]) as f:
+    for row in csv.DictReader(f):
+        uid = row["uid"]
+        params[uid] = row
+        uids.append(uid)
 
-OUTPUT_DIR = config["output_dir"]
-REG_START = int(config["start"])
-REG_END = int(config["end"])
 SAMPLE_STEP = config.get("sample_step", 10)
-FINAL_ITER = config.get("mcmc_samples", 100)
-PENULTIMATE_ITER = FINAL_ITER - SAMPLE_STEP
+FINAL_ITER  = config.get("mcmc_samples", 4000)
+PENULTIMATE = FINAL_ITER - SAMPLE_STEP
 
 all_targets = [
-    f"{OUTPUT_DIR}/{uid}/{uid}.{REG_START}_{REG_END}.{PENULTIMATE_ITER}.smc.gz"
+    f"{params[uid]['output_dir']}/{uid}/{uid}.{PENULTIMATE}.smc.gz"
     for uid in uids
 ]
+
+wildcard_constraints:
+    uid   = r"[^/]+",   # uid never crosses a directory boundary
+    outdir = r".+"      # outdir can contain slashes (full path)
 
 
 rule all:
     input: all_targets
 
+
 rule vcf_to_sites:
     input:
         vcf = lambda wc: params[wc.uid]["vcf_file"]
     output:
-        sites = f"{OUTPUT_DIR}/{{uid}}.sites"
+        sites = "{outdir}/{uid}.sites"
     container: config.get("singularity")
     shell:
         """
         python {workflow.basedir}/scripts/vcf2sites.py --vcf {input.vcf} --out {output.sites}
         """
 
+
 rule hapmap_to_bedgraph:
     input:
         hapmap = lambda wc: params[wc.uid]["recomb_map"]
     output:
-        bedgraph = f"{OUTPUT_DIR}/{{uid}}.bedgraph"
+        bedgraph = "{outdir}/{uid}.bedgraph"
     shell:
         """
         python {workflow.basedir}/scripts/hapmap_to_bedgraph.py --hapmap {input.hapmap} --out {output.bedgraph}
         """
 
+
 rule run_argweaver:
     input:
-        sites    = f"{OUTPUT_DIR}/{{uid}}.sites",
-        bedgraph = f"{OUTPUT_DIR}/{{uid}}.bedgraph"
+        sites    = "{outdir}/{uid}.sites",
+        bedgraph = "{outdir}/{uid}.bedgraph"
     output:
-        smc = f"{OUTPUT_DIR}/{{uid}}/{{uid}}.{REG_START}_{REG_END}.{PENULTIMATE_ITER}.smc.gz"
+        smc = f"{{outdir}}/{{uid}}/{{uid}}.{PENULTIMATE}.smc.gz"
     params:
         Ne          = config.get("Ne", 10000),
         mu          = lambda wc: params[wc.uid]["mu"],
@@ -68,9 +66,9 @@ rule run_argweaver:
         compression = config.get("compression", 20),
         n_iters     = FINAL_ITER,
         sample_step = SAMPLE_STEP,
-        region_start = REG_START,
-        region_end   = REG_END,
-        out_prefix  = lambda wc: f"{OUTPUT_DIR}/{wc.uid}/{wc.uid}.{REG_START}_{REG_END}"
+        start       = lambda wc: params[wc.uid]["inference_start"],
+        end         = lambda wc: params[wc.uid]["inference_end"],
+        out_prefix  = "{outdir}/{uid}/{uid}"
     container: config.get("singularity")
     shell:
         """
@@ -91,6 +89,6 @@ rule run_argweaver:
           -c {params.compression} \
           -n {params.n_iters} \
           --sample-step {params.sample_step} \
-          --region {params.region_start}-{params.region_end} \
+          --region {params.start}-{params.end} \
           -o {params.out_prefix}
         """
