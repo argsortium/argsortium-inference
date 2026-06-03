@@ -6,6 +6,12 @@ configfile: "config.yaml"
 import os
 import glob
 
+
+def to_bool(value):
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"true", "1", "yes", "y"}
+
 # Get VCF files from pattern in config
 if "vcf_pattern" not in config:
     raise ValueError(
@@ -37,6 +43,23 @@ VCF_MAP = {
     for vcf in VCF_FILES
 }
 
+REMOVE_MULTIALLELIC = to_bool(config.get("remove_multiallelic_sites", True))
+MAF_THRESHOLD = config.get("maf_threshold", None)
+MAX_INDEL_LENGTH = config.get("max_indel_length", 0)
+
+# sanitize indel length input
+try:
+    MAX_INDEL_LENGTH = int(MAX_INDEL_LENGTH)
+except (TypeError, ValueError):
+    raise ValueError("max_indel_length must be an integer or null")
+
+if MAX_INDEL_LENGTH < 0:
+    raise ValueError("max_indel_length cannot be negative")
+if MAX_INDEL_LENGTH > 250:
+    raise ValueError("max_indel_length cannot exceed 250bp")
+
+VARIANT_FILTER_FLAG = "--snps-only" if MAX_INDEL_LENGTH == 0 else f"--indel-max-allele-length {MAX_INDEL_LENGTH}"
+
 rule all:
     input:
         expand("{output_dir}/{vcf}.no_multiallelics.filtered.vcf.gz",
@@ -65,15 +88,17 @@ rule calculate_frequency:
     output:
         freq_file = "{output_dir}/{vcf}.no_multiallelics.afreq"
     params:
-        out_base = "{output_dir}/{vcf}.no_multiallelics"
+        out_base = "{output_dir}/{vcf}.no_multiallelics",
+        maf_flag = "" if MAF_THRESHOLD is None else f"--maf {MAF_THRESHOLD}",
+        variant_filter_flag = VARIANT_FILTER_FLAG
     threads: 1
     container: config.get("singularity")
     shell:
         """
         plink2 --vcf {input.normalized_vcf} \
-               --snps-only \
+               {params.variant_filter_flag} \
                --set-all-var-ids @:#:\$r:\$a \
-               --freq \
+               --freq {params.maf_flag} \
                --out {params.out_base} \
                --threads {threads}
         """
@@ -85,7 +110,10 @@ rule pick_variants:
     params:
         exclusion_list = config.get("exclusion_list", "_NA"),
         script_path = "./scripts/variant_selector.py",
-        add_chr = config.get("add_chr", True)
+        add_chr = config.get("add_chr", True),
+        remove_multiallelic = REMOVE_MULTIALLELIC,
+        maf_threshold = MAF_THRESHOLD,
+        maf_arg = "" if MAF_THRESHOLD is None else f"--maf_threshold {MAF_THRESHOLD}"
     output:
         var_incl_list = "{output_dir}/{vcf}.no_multiallelics.var_incl.list"
     container: config.get("singularity")
@@ -94,7 +122,10 @@ rule pick_variants:
         python {params.script_path} \
             {input.allele_freq_file} \
             {output.var_incl_list} \
-            --add_chr {params.add_chr} --exclusion_list {params.exclusion_list}
+            --add_chr {params.add_chr} \
+            --exclusion_list {params.exclusion_list} \
+            --remove_multi_allelic {params.remove_multiallelic} \
+            {params.maf_arg}
         """
 
 # --- Rule 4: Create final vcf file with var_incl.list
