@@ -14,6 +14,10 @@ From: continuumio/miniconda3:23.5.2-0
 %post
     set -eux
 
+    # Make pip resilient to the transient network timeouts seen during builds
+    export PIP_DEFAULT_TIMEOUT=100
+    export PIP_RETRIES=10
+
     ############################################################
     # Install system dependencies
     ############################################################
@@ -101,7 +105,7 @@ From: continuumio/miniconda3:23.5.2-0
     ###########################################################
     mkdir -p /opt/singer
     cd /opt/singer
-    git clone https://github.com/argsortium/SINGER.git
+    git clone --depth 1 https://github.com/argsortium/SINGER.git
 
     chmod +x /opt/singer/SINGER/SINGER/SINGER/convert_to_tskit
     chmod +x /opt/singer/SINGER/SINGER/SINGER/singer_master
@@ -132,7 +136,7 @@ From: continuumio/miniconda3:23.5.2-0
     
     mkdir -p /opt/relate_lib
     cd /opt/relate_lib
-    git clone https://github.com/leospeidel/relate_lib.git
+    git clone --depth 1 https://github.com/leospeidel/relate_lib.git
     cd relate_lib
     mkdir build
     cd build
@@ -166,9 +170,13 @@ From: continuumio/miniconda3:23.5.2-0
     # available at build time (hence the pre-install + --no-build-isolation).
     #######################################################
     /opt/conda/bin/conda create -y -n smc_env -c conda-forge python=3.9
-    /opt/conda/envs/smc_env/bin/pip install --no-cache-dir "numpy<1.24" cython
+    /opt/conda/envs/smc_env/bin/pip install --no-cache-dir "numpy<1.24" "cython<3"
     /opt/conda/envs/smc_env/bin/pip install --no-cache-dir --no-build-isolation \
         git+https://github.com/popgenmethods/smcpp@ca077da
+    # smc++'s plotting.py hardcodes the matplotlib style "seaborn-ticks", which
+    # was removed in matplotlib >=3.6 (renamed seaborn-v0_8-ticks). That import
+    # runs on every smc++ invocation, so pin matplotlib <3.6 or all commands crash.
+    /opt/conda/envs/smc_env/bin/pip install --no-cache-dir "matplotlib<3.6"
 
     # Expose smc++ on PATH as a launcher that runs inside smc_env
     printf '%s\n' '#!/bin/bash' \
