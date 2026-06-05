@@ -84,7 +84,8 @@ Two clusters are in active use, with **different filesystems and partitions**. M
 
 - `singer/` — canonical reference for the CSV + array pattern. `singer/CLAUDE.md` has additional pipeline-fix notes (per-task workdir, VCF region subsetting, bind mount).
 - `argweaver/` — mirrors singer's convention. Submit via `argweaver/slurm/submit_array.sh`. Was previously broken by the wildcard ambiguity above; now fixed.
-- `relate/`, `threads/`, `tsinfer/` — older code; to be migrated to the CSV + array pattern.
+- `relate/` — migrated to the shared `master_params.csv` convention (reads `params_csv`, per-row `output_dir`, region via `inference_start`/`inference_end`). Snakefile follows singer's wildcard rules (`{outdir}`/`{uid}` only, iteration numbers baked as literals). Relate has no bp-range flag, so the full VCF is converted to haps and the haps is then filtered to the inference interval (`filter_haps_region` rule). Submitted as a **single** multi-core job (not an array) via `relate/slurm/submit_single.sh` (`snakemake --cores N` over all rows); add an array script if running 500+ rows.
+- `threads/`, `tsinfer/` — older code; to be migrated to the CSV + array pattern.
 - `preprocessing/` — runs before inference; output paths feed `vcf_file` / `recomb_map` columns in the params CSV.
 
 ## Quick reference
@@ -108,5 +109,5 @@ tail -f <workflow>/slurm/logs/<jobname>_<JOBID>_<TASK>.{out,err}
 
 ## Pending TODOs
 
-- Migrate `relate/`, `threads/`, `tsinfer/` to the CSV + per-task array pattern (currently use per-run config files).
+- Migrate `threads/`, `tsinfer/` to the CSV + per-task array pattern (currently use per-run config files). (`relate/` is done — migrated to `master_params.csv`; submitted as a single multi-core job rather than an array.)
 - CSV splitting on Seawulf: singer submit scripts currently use the full `master_params.csv`; plan is to split into Milan/Skylake halves when running all 1000 jobs concurrently.

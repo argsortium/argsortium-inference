@@ -17,7 +17,7 @@ FINAL_ITER  = config.get("mcmc_samples", 4000)
 PENULTIMATE = FINAL_ITER - SAMPLE_STEP
 
 all_targets = [
-    f"{params[uid]['output_dir']}/{uid}/{uid}.{PENULTIMATE}.smc.gz"
+    f"{params[uid]['output_dir']}/{uid}/{uid}.{PENULTIMATE}.trees"
     for uid in uids
 ]
 
@@ -91,4 +91,20 @@ rule run_argweaver:
           --sample-step {params.sample_step} \
           --region {params.start}-{params.end} \
           -o {params.out_prefix}
+        """
+
+
+rule smc_to_tskit:
+    # Final step: convert the sampled SMC to a tskit tree sequence (tskit v1),
+    # mapping the variant sites onto branches as mutations.
+    input:
+        smc   = f"{{outdir}}/{{uid}}/{{uid}}.{PENULTIMATE}.smc.gz",
+        sites = "{outdir}/{uid}.sites"
+    output:
+        trees = f"{{outdir}}/{{uid}}/{{uid}}.{PENULTIMATE}.trees"
+    container: config.get("singularity_tskit")
+    shell:
+        """
+        python {workflow.basedir}/scripts/smc_to_tskit.py \
+          {input.smc} {output.trees} {input.sites}
         """

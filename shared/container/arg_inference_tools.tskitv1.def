@@ -29,6 +29,7 @@ From: continuumio/miniconda3:23.5.2-0
         libncurses5-dev libncursesw5-dev \
         libreadline-dev libsqlite3-dev libgdbm-dev \
         libgd-dev \
+        libgmp-dev libmpfr-dev libgsl-dev \
         ca-certificates \
         git \
         less vim \
@@ -155,6 +156,25 @@ From: continuumio/miniconda3:23.5.2-0
     #Python Packages
     #######################################################
     /opt/conda/bin/python -m pip install --no-cache-dir numpy pandas dendropy
+
+    #######################################################
+    # smc++ (for demography; provides vcf2smc / estimate)
+    # Installed in its own conda env "smc_env" because smc++ pins old
+    # numpy/scipy that would conflict with tskit/threads in the base env.
+    # Pinned to commit ca077da (== v1.15.4.dev) for reproducibility.
+    # Build needs libgmp/libmpfr/libgsl (added to apt above) and numpy+cython
+    # available at build time (hence the pre-install + --no-build-isolation).
+    #######################################################
+    /opt/conda/bin/conda create -y -n smc_env -c conda-forge python=3.9
+    /opt/conda/envs/smc_env/bin/pip install --no-cache-dir "numpy<1.24" cython
+    /opt/conda/envs/smc_env/bin/pip install --no-cache-dir --no-build-isolation \
+        git+https://github.com/popgenmethods/smcpp@ca077da
+
+    # Expose smc++ on PATH as a launcher that runs inside smc_env
+    printf '%s\n' '#!/bin/bash' \
+        'exec /opt/conda/bin/conda run --no-capture-output -n smc_env smc++ "$@"' \
+        > /usr/local/bin/smc++
+    chmod +x /usr/local/bin/smc++
 
 
     ######################################################

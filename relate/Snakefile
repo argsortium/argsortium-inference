@@ -1,5 +1,16 @@
-# Snakefile for Relate with branch resampling
-configfile: "config.yaml"
+# Snakefile for Relate with branch resampling.
+#
+# Migrated to the shared master_params.csv convention (see repo CLAUDE.md):
+#   - reads config["params_csv"] (columns: uid, vcf_file, mu, recomb_map,
+#     output_dir, inference_start, inference_end)
+#   - outputs land under each row's own output_dir: {output_dir}/{uid}/...
+#   - only {outdir} and {uid} are path wildcards (constrained below); iteration
+#     numbers are baked as f-string literals at parse time to avoid the
+#     snakemake 9.14.1 wildcard-ambiguity crash documented in CLAUDE.md.
+#
+# Region handling: Relate has no bp-range flag, so the full VCF is converted to
+# haps/sample and the haps is then filtered to [inference_start, inference_end].
+configfile: f"{workflow.basedir}/config.yaml"
 
 import csv
 
@@ -19,76 +30,103 @@ def to_float(val, default=0.0):
 params = {}
 uids = []
 
-with open(config["params_file"]) as f:
-    reader = csv.DictReader(f)
-    for row in reader:
+with open(config["params_csv"]) as f:
+    for row in csv.DictReader(f):
         uid = row["uid"]
         params[uid] = row
         uids.append(uid)
 
-OUTPUT_DIR = config["output_dir"]
 MU_DEFAULT = to_float(config.get("mu", 2.35e-8), 2.35e-8)
-NE = to_float(config.get("Ne", 40000), 40000)
+NE = to_float(config.get("Ne", 20000), 20000)
 ITER_START = to_int(config.get("iter_start", 0), 0)
 ITER_END = to_int(config.get("iter_end", 0), 0)
 THIN_EVERY = to_int(config.get("thin_every", 0), 0)
 
+all_targets = [
+    f"{params[uid]['output_dir']}/{uid}/{uid}.relate.sample{ITER_END}.trees"
+    for uid in uids
+]
+
+wildcard_constraints:
+    uid    = r"[^/]+",   # uid never crosses a directory boundary
+    outdir = r".+"       # outdir can contain slashes (full path)
+
+
 rule all:
-    input: [f"{OUTPUT_DIR}/{uid}.relate.sample{ITER_END}.trees" for uid in uids]
+    input: all_targets
 
-# Process HapMap File
-rule process_hapmap_file:
-    input:
-        map_file=lambda wc: params[wc.uid]["recomb_map"]
-    output:
-        processed_map=temp(f"{OUTPUT_DIR}/{{uid}}.hapmap.processed.relate")
-    container: config.get("singularity")
-    shell:
-        """
-        ./scripts/process_mapfile.py {input.map_file} -o {output.processed_map}
-        """
 
-# Convert VCF to HAPS/SAMPLE
+# Convert the COMPLETE VCF to HAPS/SAMPLE (Shapeit format).
 rule vcf_to_haps:
     input:
-        vcf=lambda wc: params[wc.uid]["vcf_file"],
+        vcf = lambda wc: params[wc.uid]["vcf_file"],
     output:
-        haps=temp(f"{OUTPUT_DIR}/{{uid}}.haps"),
-        sample=temp(f"{OUTPUT_DIR}/{{uid}}.sample"),
+        haps_full = temp(f"{{outdir}}/{{uid}}/{{uid}}.full.haps"),
+        sample    = f"{{outdir}}/{{uid}}/{{uid}}.sample",
     params:
-        working_dir = OUTPUT_DIR,
         vcf_base = lambda wc: params[wc.uid]["vcf_file"].removesuffix(".vcf.gz"),
-    container:
-        config.get("singularity"),
+    container: config.get("singularity")
     shell:
-        """
-        cd "{params.working_dir}"
+        r"""
+        mkdir -p $(dirname {output.haps_full})
         RelateFileFormats --mode ConvertFromVcf \
-            --haps {output.haps} \
+            --haps {output.haps_full} \
             --sample {output.sample} \
             -i {params.vcf_base}
         """
-# Run initial iteration of relate
+
+
+# Restrict the haps to the inference interval [inference_start, inference_end].
+# Shapeit haps column 3 is the SNP base-pair position.
+rule filter_haps_region:
+    input:
+        haps_full = f"{{outdir}}/{{uid}}/{{uid}}.full.haps",
+    output:
+        haps = temp(f"{{outdir}}/{{uid}}/{{uid}}.haps"),
+    params:
+        start = lambda wc: params[wc.uid]["inference_start"],
+        end   = lambda wc: params[wc.uid]["inference_end"],
+    shell:
+        r"""
+        awk -v s={params.start} -v e={params.end} '$3 >= s && $3 <= e' \
+            {input.haps_full} > {output.haps}
+        """
+
+
+# Process HapMap recombination map into Relate's expected format.
+rule process_hapmap_file:
+    input:
+        map_file = lambda wc: params[wc.uid]["recomb_map"],
+    output:
+        processed_map = temp(f"{{outdir}}/{{uid}}/{{uid}}.hapmap.processed.relate"),
+    container: config.get("singularity")
+    shell:
+        r"""
+        python {workflow.basedir}/scripts/process_mapfile.py \
+            {input.map_file} -o {output.processed_map}
+        """
+
+
+# Initial Relate inference (sample0).
 rule run_relate_init:
     input:
-        haps=f"{OUTPUT_DIR}/{{uid}}.haps",
-        sample=f"{OUTPUT_DIR}/{{uid}}.sample",
-        map_file=f"{OUTPUT_DIR}/{{uid}}.hapmap.processed.relate",
+        haps     = f"{{outdir}}/{{uid}}/{{uid}}.haps",
+        sample   = f"{{outdir}}/{{uid}}/{{uid}}.sample",
+        map_file = f"{{outdir}}/{{uid}}/{{uid}}.hapmap.processed.relate",
     output:
-        anc=f"{OUTPUT_DIR}/{{uid}}.relate.sample0.anc",
-        muts=f"{OUTPUT_DIR}/{{uid}}.relate.sample0.mut",
+        anc  = f"{{outdir}}/{{uid}}/{{uid}}.relate.sample0.anc",
+        muts = f"{{outdir}}/{{uid}}/{{uid}}.relate.sample0.mut",
     params:
-        mu=lambda wc: to_float(params[wc.uid].get("mu", MU_DEFAULT), MU_DEFAULT),
-        Ne=NE,
-        prefix=lambda wc: f"{wc.uid}.relate",
-        working_dir = OUTPUT_DIR
-    container:
-        config.get("singularity")
+        mu          = lambda wc: to_float(params[wc.uid].get("mu", MU_DEFAULT), MU_DEFAULT),
+        Ne          = NE,
+        prefix      = lambda wc: f"{wc.uid}.relate",
+        working_dir = lambda wc: f"{wc.outdir}/{wc.uid}",
+    container: config.get("singularity")
     shell:
         r"""
         set -euo pipefail
         cd "{params.working_dir}"
-        
+
         Relate --mode All \
           -m "{params.mu}" \
           -N "{params.Ne}" \
@@ -98,26 +136,26 @@ rule run_relate_init:
           -o "{params.prefix}.sample0"
         """
 
-# Run MCMC branch resampling
+
+# MCMC branch resampling: iterate ITER_START..ITER_END, thinning heavy outputs.
 rule run_relate_mcmc:
     input:
-        haps=f"{OUTPUT_DIR}/{{uid}}.haps",
-        sample=f"{OUTPUT_DIR}/{{uid}}.sample",
-        anc=f"{OUTPUT_DIR}/{{uid}}.relate.sample0.anc",
-        muts=f"{OUTPUT_DIR}/{{uid}}.relate.sample0.mut",
-        map_file=f"{OUTPUT_DIR}/{{uid}}.hapmap.processed.relate"
+        haps     = f"{{outdir}}/{{uid}}/{{uid}}.haps",
+        sample   = f"{{outdir}}/{{uid}}/{{uid}}.sample",
+        anc      = f"{{outdir}}/{{uid}}/{{uid}}.relate.sample0.anc",
+        muts     = f"{{outdir}}/{{uid}}/{{uid}}.relate.sample0.mut",
+        map_file = f"{{outdir}}/{{uid}}/{{uid}}.hapmap.processed.relate",
     output:
-        trees=f"{OUTPUT_DIR}/{{uid}}.relate.sample{ITER_END}.trees",
+        trees = f"{{outdir}}/{{uid}}/{{uid}}.relate.sample{ITER_END}.trees",
     params:
-        mu=lambda wc: to_float(params[wc.uid].get("mu", MU_DEFAULT), MU_DEFAULT),
-        Ne=NE,
-        prefix=lambda wc: f"{wc.uid}.relate",
-        iter_start=ITER_START,
-        iter_end=ITER_END,
-        thin_every=THIN_EVERY,
-        working_dir = OUTPUT_DIR
-    container:
-        config.get("singularity")
+        mu          = lambda wc: to_float(params[wc.uid].get("mu", MU_DEFAULT), MU_DEFAULT),
+        Ne          = NE,
+        prefix      = lambda wc: f"{wc.uid}.relate",
+        iter_start  = ITER_START,
+        iter_end    = ITER_END,
+        thin_every  = THIN_EVERY,
+        working_dir = lambda wc: f"{wc.outdir}/{wc.uid}",
+    container: config.get("singularity")
     shell:
         r"""
         set -euo pipefail
@@ -133,8 +171,9 @@ rule run_relate_mcmc:
         THIN_EVERY="{params.thin_every}"
 
         for i in $(seq "${{ITER_START}}" "${{ITER_END}}"); do
-          
+
           /opt/relate_lib/relate_lib/bin/Convert --mode ConvertToTreeSequence \
+            --compress \
             --anc "${{PREFIX}}.sample${{i}}.anc" \
             --mut "${{PREFIX}}.sample${{i}}.mut" \
             -o "${{PREFIX}}.sample${{i}}"
