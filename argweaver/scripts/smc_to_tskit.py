@@ -354,7 +354,11 @@ def build_tree_sequence(tree_records, spr, names, taxa):
     trees = [parse_topology(nwk, taxa) for _, _, nwk in tree_records]
     n_trees = len(trees)
 
-    tables = tskit.TableCollection(sequence_length=tree_records[-1][1])
+    # ARGweaver's REGION end is 1-based inclusive; use end+1 so a variant sitting
+    # exactly at the inclusive end coordinate falls inside the half-open [0, L)
+    # sequence and is spanned by the last tree (relate does the same).
+    region_end = tree_records[-1][1]
+    tables = tskit.TableCollection(sequence_length=region_end + 1)
     cur, leaf_labels = add_initial_nodes(tables, trees[0])
     assert len(leaf_labels) <= len(names)
 
@@ -385,8 +389,9 @@ def build_tree_sequence(tree_records, spr, names, taxa):
 
         cur = new_cur
 
-    # close everything still open at the end of the sequence
-    last_right = tree_records[-1][1]
+    # close everything still open at the end of the sequence (extend the last
+    # tree to region_end + 1 so it spans a variant at the inclusive end coord)
+    last_right = region_end + 1
     for child_id, (parent_id, left) in active.items():
         tables.edges.add_row(left, last_right, parent_id, child_id)
 
@@ -505,7 +510,9 @@ def map_mutations_to_branches(ts, sites, names, site_names):
 
     for pos in sorted(sites):
         alleles = sites[pos]
-        site_pos = pos - 1                      # 1-based genomic -> 0-based tskit
+        site_pos = pos                          # keep the VCF/.sites bp position
+                                                # (matches relate, threads, and the simulation truth;
+                                                #  a prior `pos - 1` shifted every site 1 bp left)
         if site_pos < 0 or site_pos >= ts.sequence_length:
             continue
         tree = ts.at(site_pos)
@@ -562,12 +569,38 @@ def map_mutations_to_branches(ts, sites, names, site_names):
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+def reorder_samples(ts, current_sample_names, desired_names):
+    """Permute the sample nodes so that sample k corresponds to desired_names[k].
+
+    ARGweaver's `arg-sample` rewrites the NAMES line of its .smc output in a
+    SCRAMBLED order (not the input VCF/.sites order). build_tree_sequence keeps
+    that SMC order, so tskit sample i ends up holding haplotype `current_sample_names[i]`
+    (the SMC NAMES order) rather than the canonical VCF haplotype i. Left
+    unfixed, every per-sample / per-pair metric compares the wrong haplotypes.
+
+    We remap the samples to `desired_names` (the .sites/VCF order). Internal
+    nodes are kept and simply reindexed by tskit; topology, edges and mutations
+    are unchanged.
+    """
+    assert set(current_sample_names) == set(desired_names), \
+        "sample name sets differ; cannot reorder"
+    name_to_node = {nm: int(node) for node, nm in zip(ts.samples(), current_sample_names)}
+    new_sample_order = [name_to_node[nm] for nm in desired_names]
+    keep = set(new_sample_order)
+    non_samples = [n for n in range(ts.num_nodes) if n not in keep]
+    return ts.subset(new_sample_order + non_samples)
+
+
 def convert(filename, sites_file=None, add_mutations=True, verify=False):
     """Convert an SMC file to a tskit TreeSequence.
 
     If `add_mutations` is True and a `sites_file` is given, variant sites are
     mapped onto branches after the node/edge tables are built. The sites file's
     leaf names must exactly match the SMC NAMES line.
+
+    The returned tree sequence's samples are ordered to match the `sites_file`
+    (i.e. the input VCF haplotype order), not ARGweaver's scrambled SMC NAMES
+    order. See `reorder_samples`.
     """
     names, region, tree_records, spr = read_smc(filename)
     print(f"names: {len(names)} | region: {region} | "
@@ -588,6 +621,12 @@ def convert(filename, sites_file=None, add_mutations=True, verify=False):
             ts, sites, names, site_names)
         print(f"mutations: {ts.num_sites} variant sites, {ts.num_mutations} mutations "
               f"| monophyletic={n_mono} flipped={n_flipped} hartigan={n_hartigan}")
+
+        # tskit sample s holds SMC haplotype names[leaf_labels[s]]; reorder to
+        # the .sites/VCF haplotype order so sample k == site_names[k].
+        current_sample_names = [names[leaf_labels[s]] for s in range(ts.num_samples)]
+        ts = reorder_samples(ts, current_sample_names, site_names)
+        print(f"reordered samples to .sites/VCF haplotype order ({ts.num_samples} samples)")
     return ts
 
 

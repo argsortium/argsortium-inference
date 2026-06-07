@@ -1,10 +1,22 @@
-# config.yaml
+# config.yaml for the tsinfer (+ tsdate) inference workflow
 
-#container
-singularity: "../shared/container/arg_inference_tools.sif"
-# Define the path where all output files should be placed, if empty will be placed in the same folder as input_vcf
-output_dir: "/grid/siepel/home/khalid/argsortium-outputs/2025_11_27/inferred_args/tsinfer/YRI_0_CEU_0_CHB_15"
+# Singularity image (tskit-v1: has bio2zarr/vcf2zarr, tsinfer, tsdate, bgzip/tabix)
+singularity: "/grid/siepel/home/khalid/argsortium-inference/shared/container/arg_inference_tools.tskitv1.sif"
 
-params_file: "/grid/siepel/home/khalid/argsortium-outputs/2025_11_27/HomSap_OutOfAfrica_3G09/YRI_0_CEU_0_CHB_15/2025_11_27_YRI_0_CEU_0_CHB_15_params_file.csv"
+# Canonical params CSV (one row per region), same format as argweaver/singer/relate/threads:
+#   uid, vcf_file, mu, recomb_map, output_dir, inference_start, inference_end
+# plus two tsinfer-specific columns for the ancestral state:
+#   ancestral_fasta  -> path to the per-sim ancestral FASTA (*.mutated.ancestral.fa.gz)
+#   contig           -> contig name inside that FASTA (e.g. chr11)
+# (tsinfer does NOT use recomb_map.)
+params_csv: "/grid/siepel/home/khalid/argsortium-inference/tsinfer/myconfigs/2026_05_11_runs/master_params.csv"
 
+# tsinfer outputs go here (the CSV's output_dir column points at argweaver).
+output_dir: "/grid/siepel/home/khalid/argsortium-outputs/2026_05_11_simulation_sets/inferred_args/tsinfer"
 
+# CONSTANT human recombination rate (per bp per generation). tsinfer uses this
+# instead of a per-region recombination map.
+recombination_rate: 1.2e-8
+
+# Per-rule computational threads (vcf2zarr / tsinfer).
+num_threads: 4

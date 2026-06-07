@@ -10,6 +10,9 @@ From: continuumio/miniconda3:23.5.2-0
     export LD_LIBRARY_PATH="/opt/htslib/1.22/lib:/opt/bcftools/1.22/lib:$LD_LIBRARY_PATH"
     export LC_ALL=C.UTF-8
     export LANG=C.UTF-8
+    # Ignore host ~/.local site-packages, which leak in via --bind /grid and can
+    # shadow (and break) the container's own packages.
+    export PYTHONNOUSERSITE=1
 
 %post
     set -eux

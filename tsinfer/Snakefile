@@ -1,70 +1,72 @@
-# Snakefile
-# Load the configuration file
+# Snakefile for tsinfer (+ tsdate) inference.
+#
+# CSV-driven (master_params.csv) like argweaver/singer/relate/threads. tsinfer
+# uses a CONSTANT recombination rate (config: recombination_rate) rather than a
+# per-region recombination map. The ancestral state is read per row from an
+# ancestral FASTA (CSV columns `ancestral_fasta` + `contig`).
 configfile: "config.yaml"
 
 import csv
 
 params = {}
 uids = []
+with open(config["params_csv"]) as f:
+    for row in csv.DictReader(f):
+        params[row["uid"]] = row
+        uids.append(row["uid"])
 
-with open(config["params_file"]) as f:
-    reader = csv.DictReader(f)
-    for row in reader:
-        uid = row["uid"]
-        params[uid] = row
-        uids.append(uid)
+OUTPUT_DIR  = config["output_dir"]
+THREADS     = config.get("num_threads", 4)
+RECOMB_RATE = config.get("recombination_rate", 1.2e-8)
+
+wildcard_constraints:
+    uid = r"[^/]+"
 
 
-OUTPUT_DIR = config["output_dir"]
-THREADS = config.get("threads", 4)
-
-# ---- rule all ----
 rule all:
-    input:
-        expand(f"{OUTPUT_DIR}/{{uid}}.tsinfer.trees", uid=uids)
+    input: [f"{OUTPUT_DIR}/{uid}.tsinfer.trees" for uid in uids]
 
 
-# ---- VCF to Zarr ----
 rule convert_vcf_to_zarr:
     input:
-        vcf=lambda wc: params[wc.uid]["vcf_file"]
+        vcf = lambda wc: params[wc.uid]["vcf_file"]
     output:
-        zarr_dir=directory(f"{OUTPUT_DIR}/{{uid}}.vcz")
+        zarr_dir = directory(f"{OUTPUT_DIR}/{{uid}}.vcz")
     params:
-        outbase=lambda wc: f"{OUTPUT_DIR}/{wc.uid}"
+        outbase = lambda wc: f"{OUTPUT_DIR}/{wc.uid}"
     container: config.get("singularity")
     shell:
         """
-        vcf2zarr explode {input.vcf} {params.outbase}.icf
+        mkdir -p {OUTPUT_DIR}
+        # vcf2zarr needs an indexed VCF (random access) -> local symlink + tabix
+        ln -sf {input.vcf} {params.outbase}.in.vcf.gz
+        tabix -f -p vcf {params.outbase}.in.vcf.gz
+        rm -rf {params.outbase}.icf {output.zarr_dir}
+        vcf2zarr explode {params.outbase}.in.vcf.gz {params.outbase}.icf
         vcf2zarr encode {params.outbase}.icf {output.zarr_dir}
         """
 
-# ---- tsinfer ----
 rule run_tsinfer:
     input:
-        zarr_dir=f"{OUTPUT_DIR}/{{uid}}.vcz"
+        zarr_dir = f"{OUTPUT_DIR}/{{uid}}.vcz"
     output:
-        trees=f"{OUTPUT_DIR}/{{uid}}.tsinfer.trees"
+        trees = f"{OUTPUT_DIR}/{{uid}}.tsinfer.trees"
     params:
-        mu=lambda wc: params[wc.uid]["mu"],
-        contig=lambda wc: params[wc.uid]["contig"],
-        start=lambda wc: params[wc.uid]["start"],
-        end=lambda wc: params[wc.uid]["end"],
-        recomb_map=lambda wc: params[wc.uid]["recomb_map"],
-        fasta=lambda wc: params[wc.uid]["ancestral_fasta"],
-        #mask=lambda wc: params[wc.uid]get("mask_bed", ""), #FIXME
-        seed=lambda wc: params[wc.uid]["seed"],
-        script_path = "./scripts/run_tsinfer.py"
-    container: config.get("singularity")
+        mu          = lambda wc: params[wc.uid]["mu"],
+        fasta       = lambda wc: params[wc.uid]["ancestral_fasta"],
+        contig      = lambda wc: params[wc.uid]["contig"],
+        recomb_rate = RECOMB_RATE,
+        script      = f"{workflow.basedir}/scripts/run_tsinfer.py"
     threads: THREADS
+    container: config.get("singularity")
     shell:
         """
-        python {params.script_path} \
+        python {params.script} \
             --zarr {input.zarr_dir} \
             --fasta {params.fasta} \
             --chrom {params.contig} \
-            --recomb-map {params.recomb_map} \
+            --recomb-rate {params.recomb_rate} \
             --mut-rate {params.mu} \
-            --outdir {OUTPUT_DIR} \
+            --output {output.trees} \
             --threads {threads}
         """

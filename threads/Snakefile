@@ -1,82 +1,108 @@
-# Snakefile for THReaD-S
-configfile: "config.yaml"
+# Snakefile for THReaD-S inference.
+#
+# CSV-driven (master_params.csv) like argweaver/singer/relate. Each row (uid) is
+# inferred independently. The demography is supplied per row via a
+# `demography_file` column in the params CSV (a Threads .demo).
+#
+# Output layout mirrors relate: outputs land under each row's own output_dir,
+# nested in a per-uid subdirectory -> {output_dir}/{uid}/{uid}.threads.*
+# Only {outdir} and {uid} are path wildcards (constrained below).
+#
+# Run relate-style: one SLURM job, snakemake --cores N over all rows
+# (see slurm/submit_single.sh). Demographies can be pre-computed from panel VCFs
+# with smc++ via scripts/make_demo.sh + slurm/submit_demos.sh.
+configfile: f"{workflow.basedir}/config.yaml"
 
 import csv
 
 params = {}
 uids = []
+with open(config["params_csv"]) as f:
+    for row in csv.DictReader(f):
+        params[row["uid"]] = row
+        uids.append(row["uid"])
 
-with open(config["params_file"]) as f:
-    reader = csv.DictReader(f)
-    for row in reader:
-        uid = row["uid"]
-        params[uid] = row
-        uids.append(uid)
+THREADS = config.get("num_threads", 4)
+MODE    = config.get("threads_mode", "wgs")
+# Static demography for all rows: a flat constant-Ne file (2N = 20000 -> Ne = 10000).
+# The per-row inferred smc++ .demo is intentionally NOT used.
+DEMOGRAPHY = config.get("demography_file") or f"{workflow.basedir}/Ne10000.demo"
 
+all_targets = [
+    f"{params[uid]['output_dir']}/{uid}/{uid}.threads.trees" for uid in uids
+]
 
-OUTPUT_DIR = config["output_dir"]
-THREADS = config.get("threads", 20)
-DEMOGRAPHY_FILE = config["demography_file"]
+wildcard_constraints:
+    uid    = r"[^/]+",   # uid never crosses a directory boundary
+    outdir = r".+"       # outdir can contain slashes (full path)
 
 
 rule all:
-    input: [f"{OUTPUT_DIR}/{uid}.threads.trees" for uid in uids]
+    input: all_targets
 
 
 rule prepare_inputs:
     input:
-        vcf=lambda wc: params[wc.uid]["vcf_file"],
-        map_file=lambda wc: params[wc.uid]["recomb_map"]
+        vcf      = lambda wc: params[wc.uid]["vcf_file"],
+        map_file = lambda wc: params[wc.uid]["recomb_map"]
     output:
-        pgen=f"{OUTPUT_DIR}/{{uid}}.pgen",
-        fam=f"{OUTPUT_DIR}/{{uid}}.fam",
-        bim=f"{OUTPUT_DIR}/{{uid}}.bim",
-        processed_map=temp(f"{OUTPUT_DIR}/{{uid}}.threads.map")
+        pgen          = f"{{outdir}}/{{uid}}/{{uid}}.pgen",
+        fam           = f"{{outdir}}/{{uid}}/{{uid}}.fam",
+        bim           = f"{{outdir}}/{{uid}}/{{uid}}.bim",
+        processed_map = temp(f"{{outdir}}/{{uid}}/{{uid}}.threads.map")
     params:
-        outbase=lambda wc: f"{OUTPUT_DIR}/{wc.uid}",
-        threads=THREADS
+        outbase = lambda wc: f"{wc.outdir}/{wc.uid}/{wc.uid}"
+    threads: THREADS
     container: config.get("singularity")
     shell:
         """
+        mkdir -p $(dirname {params.outbase})
         plink2 \
           --vcf {input.vcf} \
           --make-bpgen \
-          --threads {params.threads} \
+          --threads {threads} \
           --out {params.outbase} \
           --mac 1
 
-        awk 'NR == 1 {{print "chr\tpos\trate\tcM"; next}} {{print $0}}' {input.map_file} > {output.processed_map}
+        awk 'NR == 1 {{print "chr\\tpos\\trate\\tcM"; next}} {{print $0}}' {input.map_file} > {output.processed_map}
         """
 
 
 rule threads_infer:
     input:
-        pgen=f"{OUTPUT_DIR}/{{uid}}.pgen",
-        map_file=f"{OUTPUT_DIR}/{{uid}}.threads.map"
+        pgen       = f"{{outdir}}/{{uid}}/{{uid}}.pgen",
+        map_file   = f"{{outdir}}/{{uid}}/{{uid}}.threads.map",
+        demography = DEMOGRAPHY
     output:
-        threads_file=f"{OUTPUT_DIR}/{{uid}}.threads"
+        threads_file = f"{{outdir}}/{{uid}}/{{uid}}.threads"
     params:
-        out_prefix=lambda wc: f"{OUTPUT_DIR}/{wc.uid}.threads",
-        demography=DEMOGRAPHY_FILE,
-        num_threads=THREADS
+        out_prefix = lambda wc: f"{wc.outdir}/{wc.uid}/{wc.uid}.threads",
+        mode       = MODE,
+        mu         = lambda wc: params[wc.uid]["mu"]
+    threads: THREADS
     container: config.get("singularity")
     shell:
         """
         threads infer \
           --pgen {input.pgen} \
           --map {input.map_file} \
-          --demography {params.demography} \
+          --demography {input.demography} \
+          --mode {params.mode} \
+          --mutation_rate {params.mu} \
+          --num_threads {threads} \
           --out {params.out_prefix} \
-          --fit_to_data \
+          --fit_to_data
         """
 
+
 rule threads_convert:
+    # .threads -> .argn (ARG-Needle). NB: `threads convert --tsz` is broken in
+    # this container (tszip/numcodecs incompatibility); arg_to_tskit itself works,
+    # so we go via .argn and convert to .trees in argn_to_trees below.
     input:
-        threads_file=f"{OUTPUT_DIR}/{{uid}}.threads"
+        threads_file = f"{{outdir}}/{{uid}}/{{uid}}.threads"
     output:
-        argn=f"{OUTPUT_DIR}/{{uid}}.threads.argn"
-    params:
-        out_prefix=lambda wc: f"{OUTPUT_DIR}/{wc.uid}.threads"
+        argn = f"{{outdir}}/{{uid}}/{{uid}}.threads.argn"
     container: config.get("singularity")
     shell:
         """
@@ -86,13 +112,14 @@ rule threads_convert:
           --add_mutations
         """
 
+
 rule argn_to_trees:
     input:
-        argn=f"{OUTPUT_DIR}/{{uid}}.threads.argn"
+        argn = f"{{outdir}}/{{uid}}/{{uid}}.threads.argn"
     output:
-        trees=f"{OUTPUT_DIR}/{{uid}}.threads.trees"
+        trees = f"{{outdir}}/{{uid}}/{{uid}}.threads.trees"
     params:
-        script_path="../argneedle/scripts/argn_to_tskit.py"
+        script_path = f"{workflow.basedir}/../argneedle/scripts/argn_to_tskit.py"
     container: config.get("singularity")
     shell:
         """
